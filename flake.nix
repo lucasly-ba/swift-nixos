@@ -231,12 +231,16 @@
             # detects the target libc via the clang toolchain's SYSROOT-based system
             # include paths (NOT -Xcc -idirafter), so on NixOS (empty /usr/include) it
             # reports "libc not found" and SwiftGlibc/the Glibc overlay fail.  Point it
-            # at a glibc sysroot via -Xcc --sysroot=${swiftSysroot} (verified to build
-            # Glibc.o).  The flag value is a CMake list (separator ';'), and
-            # build-script-impl word-splits EXTRA_CMAKE_OPTIONS through a bash `eval`
-            # array, so the ';' must be SINGLE-QUOTED or eval treats it as a command
-            # separator and drops the option (verified: unquoted -> empty cache var).
-            export EXTRA_CMAKE_OPTIONS="-DBUILTINS_CMAKE_ARGS=-DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON -DSWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS='-Xcc;--sysroot=${swiftSysroot}'"
+            # at a glibc sysroot.  We do this by setting the Linux SDK path itself
+            # (SWIFT_SDK_LINUX_ARCH_x86_64_PATH) to ${swiftSysroot}, so the stdlib
+            # swiftc gets `-sdk ${swiftSysroot}` -> ClangImporter SysRoot=swiftSysroot
+            # -> usr/include (glibc) on the toolchain system-include path -> libc
+            # found (verified: replaying Glibc.o with -sdk ${swiftSysroot} builds it).
+            # This is a SINGLE-VALUE option (no ';'), so it survives build-script-impl's
+            # `eval EXTRA_CMAKE_OPTIONS=(...)` intact (the SWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS
+            # list form needs a ';' which that eval eats).  Safe: swiftSysroot/usr/include
+            # is glibc, a superset of the empty `/` other targets already built against.
+            export EXTRA_CMAKE_OPTIONS="-DBUILTINS_CMAKE_ARGS=-DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON -DSWIFT_SDK_LINUX_ARCH_x86_64_PATH=${swiftSysroot}"
 
             echo "Swift 6.5 dev shell — source root: $SWIFT_SOURCE_ROOT"
           '';
