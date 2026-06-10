@@ -27,6 +27,35 @@
           ln -s ${pkgs.ncurses}/lib/* $out/lib/
           ln -s ${pkgs.ncurses}/lib/libncursesw.so $out/lib/libcurses.so
         '';
+
+        # COMPLETE host swift toolchain.  When the swift build runs the just-built
+        # swift-frontend/swiftc to compile the stdlib, it bakes
+        # `LD_LIBRARY_PATH=<host-toolchain>/lib/swift/linux` into its ninja rules.
+        # nixpkgs' DT_RUNPATH is non-transitive, so the just-built tools can't
+        # resolve transitively-needed runtime libs (libdispatch.so, then Foundation)
+        # via rpath; they rely on that LD_LIBRARY_PATH.  But the nixpkgs swift
+        # wrapper's lib/swift/linux LACKS libdispatch.so/libFoundation.so (they sit
+        # in swiftPackages.Dispatch/Foundation's top-level /lib).  Present a toolchain
+        # whose lib/swift/linux ALSO contains those .so's.  The wrapper's bin/ scripts
+        # use absolute store paths internally, so symlinking them into a new prefix
+        # keeps them working.  Put this first on PATH (shellHook) so build-script
+        # detects it as the host toolchain and bakes a COMPLETE LD_LIBRARY_PATH.
+        bootstrapSwift = pkgs.runCommandLocal "swift-bootstrap-complete" { } ''
+          mkdir -p $out/bin $out/lib/swift/linux $out/lib/swift
+          for f in ${pkgs.swift}/bin/*; do ln -s "$f" "$out/bin/"; done
+          for d in ${pkgs.swift}/lib/*; do
+            n=$(basename "$d"); [ "$n" = swift ] && continue
+            ln -s "$d" "$out/lib/$n"
+          done
+          for d in ${pkgs.swift}/lib/swift/*; do
+            n=$(basename "$d"); [ "$n" = linux ] && continue
+            ln -s "$d" "$out/lib/swift/$n"
+          done
+          for f in ${pkgs.swift}/lib/swift/linux/*; do ln -s "$f" "$out/lib/swift/linux/"; done
+          # Dispatch ships its .so's in top-level /lib; Foundation in lib/swift/linux.
+          for f in ${pkgs.swiftPackages.Dispatch}/lib/*.so;               do ln -sf "$f" "$out/lib/swift/linux/"; done
+          for f in ${pkgs.swiftPackages.Foundation}/lib/swift/linux/*.so;  do ln -sf "$f" "$out/lib/swift/linux/"; done
+        '';
       in {
         devShells.default = pkgs.mkShell {
           name = "swift-dev";
@@ -93,6 +122,11 @@
           shellHook = ''
             export SWIFT_SOURCE_ROOT="$(pwd)"
             export SWIFT_BUILD_ROOT="$(pwd)/build"
+
+            # Make the COMPLETE host swift toolchain (see bootstrapSwift) the one
+            # build-script detects, so the LD_LIBRARY_PATH it bakes for running the
+            # just-built compiler against the stdlib includes libdispatch.so/Foundation.
+            export PATH="${bootstrapSwift}/bin:$PATH"
 
             # Prefer ccache if available
             if command -v ccache &>/dev/null; then
