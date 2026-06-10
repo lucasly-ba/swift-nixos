@@ -12,8 +12,11 @@ cd "$(dirname "$0")/swift"
 # with it there (sysroot-prefixing) — a hard conflict (see memory note).  Everything
 # else (compiler, stdlib, Glibc overlay, runtime, dispatch) builds; we skip C++
 # interop to get a working swiftc.  Revisit if/when C++ interop is needed.
-# SWIFT_INCLUDE_TESTS=FALSE: skip the test-only stdlib variant (swift-test-stdlib),
-# which fails in the test build and is not part of a usable toolchain.
+# SWIFT_INCLUDE_TESTS=FALSE: skip building the lit test-suite executables (not needed
+# for a usable toolchain, and faster).  NOTE: swift-test-stdlib still builds and is fine
+# — a clean single build-script run completes with exit 0 (FAILED: 0).  (Earlier
+# "swift-test-stdlib failed" reports were from accidentally running overlapping builds
+# in the same build dir; run only ONE build at a time.)
 exec utils/build-script --release-debuginfo --debug-swift --sccache \
   "--extra-cmake-options=-DSWIFT_SDK_LINUX_ARCH_x86_64_PATH=${SWIFT_GLIBC_SYSROOT}" \
   "--extra-cmake-options=-DSWIFT_ENABLE_EXPERIMENTAL_CXX_INTEROP:BOOL=FALSE" \

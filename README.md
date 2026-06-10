@@ -15,9 +15,9 @@ $ echo 'print((1...5).map{$0*$0})' > hi.swift && swiftc hi.swift -o hi && ./hi
 [1, 4, 9, 16, 25]
 ```
 
-Known limitations are listed at the bottom (no Foundation, no C++ interop, and
-`build-script` exits non-zero because a *test-only* stdlib variant still fails — the
-compiler + standard library themselves are complete and usable).
+A clean single `dobuild.sh` run completes with **exit 0 (0 failures)**. Known limitations
+are listed at the bottom (no Foundation, no C++ interop). **Run only one build at a time**
+— overlapping `build-script` runs share the same `build/` dir and corrupt each other.
 
 > This repo is **only the recipe** (flake + script + notes). You fetch Apple's Swift
 > source yourself (next section).
@@ -142,7 +142,7 @@ Each lives in `flake.nix` with inline comments; the git history has one commit p
 - **No Foundation.** Not built (`--skip-build-foundation`). `import Foundation` reports
   "no such module". A 5.10.x Foundation can't just be grafted onto a 6.5-dev compiler
   (incompatible `.swiftmodule` format) — it needs building from source.
-- **`build-script` exits non-zero.** Only because the `swift-test-stdlib` *test* variant
-  still fails (`SWIFT_INCLUDE_TESTS:BOOL=FALSE` didn't skip it — it's pulled in by
-  `--build-stdlib-deployment-targets all`). The compiler + stdlib build fine; this just
-  means there's no clean `--install-destdir` toolchain yet.
+- **No relocatable installed toolchain yet.** The build completes cleanly (exit 0) and
+  the working `swiftc` is in `build/.../swift-linux-x86_64/bin/`, but `dobuild.sh` doesn't
+  pass `--install-swift`/install flags, so the `toolchain-…/usr` destdir isn't populated.
+  Add those flags if you want a relocatable toolchain directory.
