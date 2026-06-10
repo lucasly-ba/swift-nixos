@@ -226,21 +226,22 @@
             # builtins entirely — not needed for Swift development on x86_64.
             # BUILTINS_CMAKE_ARGS is forwarded directly into the builtins ExternalProject.
             #
-            # SWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS: the just-built (unwrapped) swiftc
-            # compiles the stdlib overlays (Glibc, …) with `-sdk /`.  Its ClangImporter
+            # Glibc-sysroot for the stdlib overlays: the just-built (unwrapped) swiftc
+            # compiles the overlays (Glibc, CxxStdlib, …) with `-sdk /`; its ClangImporter
             # detects the target libc via the clang toolchain's SYSROOT-based system
-            # include paths (NOT -Xcc -idirafter), so on NixOS (empty /usr/include) it
-            # reports "libc not found" and SwiftGlibc/the Glibc overlay fail.  Point it
-            # at a glibc sysroot.  We do this by setting the Linux SDK path itself
-            # (SWIFT_SDK_LINUX_ARCH_x86_64_PATH) to ${swiftSysroot}, so the stdlib
-            # swiftc gets `-sdk ${swiftSysroot}` -> ClangImporter SysRoot=swiftSysroot
-            # -> usr/include (glibc) on the toolchain system-include path -> libc
-            # found (verified: replaying Glibc.o with -sdk ${swiftSysroot} builds it).
-            # This is a SINGLE-VALUE option (no ';'), so it survives build-script-impl's
-            # `eval EXTRA_CMAKE_OPTIONS=(...)` intact (the SWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS
-            # list form needs a ';' which that eval eats).  Safe: swiftSysroot/usr/include
-            # is glibc, a superset of the empty `/` other targets already built against.
-            export EXTRA_CMAKE_OPTIONS="-DBUILTINS_CMAKE_ARGS=-DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON -DSWIFT_SDK_LINUX_ARCH_x86_64_PATH=${swiftSysroot}"
+            # include paths (NOT -Xcc -idirafter / CPATH), so on NixOS (empty /usr/include)
+            # it reports "libc not found" and SwiftGlibc/the overlays fail.  Fix: point the
+            # Linux SDK path at ${swiftSysroot} so swiftc gets `-sdk ${swiftSysroot}` ->
+            # ClangImporter SysRoot=swiftSysroot -> usr/include (glibc) -> libc found
+            # (verified: replaying Glibc.o with -sdk ${swiftSysroot} builds it).
+            # IMPORTANT: EXTRA_CMAKE_OPTIONS only reaches the LLVM/builtins cmake, NOT the
+            # swift compiler's cmake (verified) — so the BUILTINS fix below works, but the
+            # SDK-path -D must be passed on the build-script COMMAND LINE instead (which
+            # does reach swift cmake, and sticks because SwiftConfigureSDK sets the SDK
+            # path with `CACHE ... ` without FORCE).  We export the path for that command:
+            #   utils/build-script ... --extra-cmake-options=-DSWIFT_SDK_LINUX_ARCH_x86_64_PATH=$SWIFT_GLIBC_SYSROOT
+            export EXTRA_CMAKE_OPTIONS="-DBUILTINS_CMAKE_ARGS=-DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON"
+            export SWIFT_GLIBC_SYSROOT="${swiftSysroot}"
 
             echo "Swift 6.5 dev shell — source root: $SWIFT_SOURCE_ROOT"
           '';
