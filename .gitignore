@@ -1,0 +1,8 @@
+# This repo exists ONLY so the Nix flake here is a "git flake": nix then copies
+# just the git-tracked files into the store on `nix develop`, instead of the
+# entire ~60G working tree (build/, swift/, llvm-project/, …) which filled the
+# disk. Ignore everything except the flake files themselves.
+/*
+!/.gitignore
+!/flake.nix
+!/flake.lock
