@@ -75,20 +75,24 @@
         # recorded and fails verification).  Verified: CxxStdlib emit-module builds
         # against this sysroot with no --gcc-toolchain.  Per-entry symlinks (not
         # `cp -as`) so the dirs stay writable to add the c++/gcc entries.
-        # IMPORTANT: usr/lib intentionally contains ONLY the gcc install dir, NOT
-        # glibc's libs.  glibc's `lib/libc.so` is a TEXT linker script with absolute
-        # GROUP() paths; if it lives inside the sysroot, GNU ld prefixes the sysroot
-        # onto those paths when linking with -sdk/--sysroot ->
-        # "cannot open <sysroot>/nix/store/<glibc>/lib/libc.so.6".  So we keep glibc
-        # OUT of the sysroot's usr/lib: linking finds libc via LIBRARY_PATH (glibc/lib,
-        # OUTSIDE the sysroot -> ld does not prefix its script), and crt via the
-        # shellHook CCC_OVERRIDE `-B${glibc}/lib`.  usr/lib/gcc stays for clang's
-        # libstdc++/gcc-toolchain detection (those crt are real .o, not scripts).
+        # usr/lib needs the glibc libs (clang's gcc/libstdc++ detection for the
+        # CxxStdlib overlay only succeeds when the sysroot has a usable libc) AND the
+        # gcc install dir.  BUT glibc's `libc.so`/`libm.so` are TEXT linker scripts
+        # with ABSOLUTE GROUP() paths; inside a sysroot, GNU ld prefixes the sysroot
+        # onto them when linking with -sdk/--sysroot ->
+        # "cannot open <sysroot>/nix/store/<glibc>/lib/libc.so.6".  Fix: symlink all
+        # glibc libs, then OVERWRITE libc.so/libm.so with equivalent scripts that use
+        # BARE names, which ld resolves from this same usr/lib (no prefixing).  This
+        # satisfies BOTH the overlay compile (libstdc++ found) and the link.
         swiftSysroot = pkgs.runCommandLocal "swift-sysroot" { } ''
           mkdir -p $out/usr/include $out/usr/lib
           for f in ${pkgs.glibc.dev}/include/*; do ln -s "$f" $out/usr/include/; done
+          for f in ${pkgs.glibc}/lib/*;          do ln -s "$f" $out/usr/lib/; done
           ln -s ${pkgs.stdenv.cc.cc}/include/c++ $out/usr/include/c++
           ln -s ${pkgs.stdenv.cc.cc}/lib/gcc     $out/usr/lib/gcc
+          rm -f $out/usr/lib/libc.so $out/usr/lib/libm.so
+          printf 'OUTPUT_FORMAT(elf64-x86-64)\nGROUP ( libc.so.6 libc_nonshared.a AS_NEEDED ( ld-linux-x86-64.so.2 ) )\n' > $out/usr/lib/libc.so
+          printf 'OUTPUT_FORMAT(elf64-x86-64)\nGROUP ( libm.so.6 AS_NEEDED ( libmvec.so.1 ) )\n' > $out/usr/lib/libm.so
         '';
       in {
         devShells.default = pkgs.mkShell {
