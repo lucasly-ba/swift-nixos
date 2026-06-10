@@ -243,6 +243,14 @@
             export EXTRA_CMAKE_OPTIONS="-DBUILTINS_CMAKE_ARGS=-DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON"
             export SWIFT_GLIBC_SYSROOT="${swiftSysroot}"
 
+            # The C++ interop overlay (CxxStdlib) defaults to `-Xcc --gcc-toolchain=/usr`
+            # (SwiftConfigureSDK.cmake), empty on NixOS -> "libstdc++ not found" ->
+            # "underlying module 'CxxStdlib' not found".  Point --gcc-toolchain at the
+            # nix gcc (has libstdc++).  Passed on the build-script CLI via
+            # SWIFT_SDK_LINUX_CXX_OVERLAY_SWIFT_COMPILE_FLAGS (verified: replaying
+            # CxxStdlib with -Xcc --gcc-toolchain=$SWIFT_GCC_TOOLCHAIN builds it).
+            export SWIFT_GCC_TOOLCHAIN="${pkgs.stdenv.cc.cc}"
+
             echo "Swift 6.5 dev shell — source root: $SWIFT_SOURCE_ROOT"
           '';
         };
