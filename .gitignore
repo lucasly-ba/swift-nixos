@@ -1,8 +1,11 @@
-# This repo exists ONLY so the Nix flake here is a "git flake": nix then copies
-# just the git-tracked files into the store on `nix develop`, instead of the
-# entire ~60G working tree (build/, swift/, llvm-project/, …) which filled the
-# disk. Ignore everything except the flake files themselves.
+# This is a "git flake": nix copies only the git-tracked files into the store on
+# `nix develop`, instead of the entire ~60G working tree (build/, swift/,
+# llvm-project/, …). Track only the recipe (flake + build script + docs); ignore
+# everything else (the Swift source checkouts and build/ are fetched/produced
+# locally, not part of this repo).
 /*
 !/.gitignore
 !/flake.nix
 !/flake.lock
+!/dobuild.sh
+!/README.md
