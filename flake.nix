@@ -138,6 +138,14 @@
             export CC=clang
             export CXX=clang++
 
+            # The nix clang wrapper always adds --gcc-toolchain=<gcc>, which is
+            # "unused during compilation" on -c steps.  swift-corelibs-libdispatch
+            # compiles its C with -Werror, turning that into a fatal
+            # -Wunused-command-line-argument.  Disable that one warning (it only
+            # affects the nix-wrapped clang; pure warning flag, no include-order
+            # effect, so it can't disturb the libstdc++ #include_next fix).
+            export NIX_CFLAGS_COMPILE="-Wno-unused-command-line-argument''${NIX_CFLAGS_COMPILE:+ $NIX_CFLAGS_COMPILE}"
+
             # Prefer ccache if available
             if command -v ccache &>/dev/null; then
               export CMAKE_C_COMPILER_LAUNCHER=ccache
