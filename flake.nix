@@ -128,6 +128,16 @@
             # just-built compiler against the stdlib includes libdispatch.so/Foundation.
             export PATH="${bootstrapSwift}/bin:$PATH"
 
+            # Build with clang, not the gcc stdenv default.  llbuild (built by
+            # swift-driver's helper via CMake) uses the environment CC/CXX, and the
+            # mkShell gcc stdenv defaults them to gcc/g++ — which chokes on llbuild's
+            # clang-only warning flags (-Wbool-conversion, -Wdocumentation, …).
+            # Force clang so llbuild (and anything else honouring CC/CXX) matches the
+            # rest of the toolchain.  (cmark/llvm/swift set CMAKE_*_COMPILER
+            # explicitly, so this only affects the env-driven builds.)
+            export CC=clang
+            export CXX=clang++
+
             # Prefer ccache if available
             if command -v ccache &>/dev/null; then
               export CMAKE_C_COMPILER_LAUNCHER=ccache
