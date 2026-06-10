@@ -233,8 +233,8 @@
             # reports "libc not found" and SwiftGlibc/the Glibc overlay fail.  Point it
             # at a glibc sysroot via -Xcc --sysroot=${swiftSysroot} (verified to build
             # Glibc.o).  The flag value is a CMake list (separator ';'), and
-            # build-script-impl does `eval EXTRA_CMAKE_OPTIONS=(${EXTRA_CMAKE_OPTIONS})`,
-            # so the ';' must be SINGLE-QUOTED or eval treats it as a command
+            # build-script-impl word-splits EXTRA_CMAKE_OPTIONS through a bash `eval`
+            # array, so the ';' must be SINGLE-QUOTED or eval treats it as a command
             # separator and drops the option (verified: unquoted -> empty cache var).
             export EXTRA_CMAKE_OPTIONS="-DBUILTINS_CMAKE_ARGS=-DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON -DSWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS='-Xcc;--sysroot=${swiftSysroot}'"
 
