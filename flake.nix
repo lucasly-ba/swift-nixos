@@ -84,12 +84,16 @@
         # glibc libs, then OVERWRITE libc.so/libm.so with equivalent scripts that use
         # BARE names, which ld resolves from this same usr/lib (no prefixing).  This
         # satisfies BOTH the overlay compile (libstdc++ found) and the link.
+        # C++ interop (CxxStdlib) is disabled (see dobuild.sh), so this sysroot does
+        # NOT include gcc's c++ headers — having usr/include/c++ in the sysroot makes
+        # the SwiftGlibc *C* clang-module pull in <cmath> -> "redefinition of 'acos'"
+        # -> "could not build C module 'SwiftGlibc'".  We keep ONLY glibc (headers +
+        # libs) for the Glibc overlay, with libc.so/libm.so rewritten to bare names so
+        # the bare-clang link doesn't sysroot-prefix their absolute GROUP paths.
         swiftSysroot = pkgs.runCommandLocal "swift-sysroot" { } ''
           mkdir -p $out/usr/include $out/usr/lib
           for f in ${pkgs.glibc.dev}/include/*; do ln -s "$f" $out/usr/include/; done
           for f in ${pkgs.glibc}/lib/*;          do ln -s "$f" $out/usr/lib/; done
-          ln -s ${pkgs.stdenv.cc.cc}/include/c++ $out/usr/include/c++
-          ln -s ${pkgs.stdenv.cc.cc}/lib/gcc     $out/usr/lib/gcc
           rm -f $out/usr/lib/libc.so $out/usr/lib/libm.so
           printf 'OUTPUT_FORMAT(elf64-x86-64)\nGROUP ( libc.so.6 libc_nonshared.a AS_NEEDED ( ld-linux-x86-64.so.2 ) )\n' > $out/usr/lib/libc.so
           printf 'OUTPUT_FORMAT(elf64-x86-64)\nGROUP ( libm.so.6 AS_NEEDED ( libmvec.so.1 ) )\n' > $out/usr/lib/libm.so
