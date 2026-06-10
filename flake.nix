@@ -66,10 +66,21 @@
         # overlay fails.  Passing `-Xcc --sysroot=${swiftSysroot}` (which takes
         # precedence in ClangIncludePaths.cpp) puts glibc on the toolchain's system
         # include path so libc is found.
+        # Sysroot is ENRICHED with the gcc toolchain too (c++ headers + gcc install
+        # dir), so clang's GCC-under-sysroot detection finds BOTH glibc (libc, for the
+        # Glibc overlay) AND libstdc++ (for the CxxStdlib C++ overlay) purely via
+        # `-sdk ${swiftSysroot}` — no -Xcc --gcc-toolchain needed.  Crucially `-sdk`
+        # IS recorded in the emitted .swiftinterface, so the verify-emitted-module-
+        # interface recompile also finds the modules (a bare --gcc-toolchain is NOT
+        # recorded and fails verification).  Verified: CxxStdlib emit-module builds
+        # against this sysroot with no --gcc-toolchain.  Per-entry symlinks (not
+        # `cp -as`) so the dirs stay writable to add the c++/gcc entries.
         swiftSysroot = pkgs.runCommandLocal "swift-sysroot" { } ''
-          mkdir -p $out/usr
-          ln -s ${pkgs.glibc.dev}/include $out/usr/include
-          ln -s ${pkgs.glibc}/lib $out/usr/lib
+          mkdir -p $out/usr/include $out/usr/lib
+          for f in ${pkgs.glibc.dev}/include/*; do ln -s "$f" $out/usr/include/; done
+          for f in ${pkgs.glibc}/lib/*;          do ln -s "$f" $out/usr/lib/; done
+          ln -s ${pkgs.stdenv.cc.cc}/include/c++ $out/usr/include/c++
+          ln -s ${pkgs.stdenv.cc.cc}/lib/gcc     $out/usr/lib/gcc
         '';
       in {
         devShells.default = pkgs.mkShell {
