@@ -232,9 +232,11 @@
             # include paths (NOT -Xcc -idirafter), so on NixOS (empty /usr/include) it
             # reports "libc not found" and SwiftGlibc/the Glibc overlay fail.  Point it
             # at a glibc sysroot via -Xcc --sysroot=${swiftSysroot} (verified to build
-            # Glibc.o).  CMake list separator is ';'; the value has no spaces so
-            # build-script's shlex split keeps it a single argument.
-            export EXTRA_CMAKE_OPTIONS="-DBUILTINS_CMAKE_ARGS=-DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON -DSWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS=-Xcc;--sysroot=${swiftSysroot}"
+            # Glibc.o).  The flag value is a CMake list (separator ';'), and
+            # build-script-impl does `eval EXTRA_CMAKE_OPTIONS=(${EXTRA_CMAKE_OPTIONS})`,
+            # so the ';' must be SINGLE-QUOTED or eval treats it as a command
+            # separator and drops the option (verified: unquoted -> empty cache var).
+            export EXTRA_CMAKE_OPTIONS="-DBUILTINS_CMAKE_ARGS=-DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON -DSWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS='-Xcc;--sysroot=${swiftSysroot}'"
 
             echo "Swift 6.5 dev shell — source root: $SWIFT_SOURCE_ROOT"
           '';
