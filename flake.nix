@@ -75,10 +75,18 @@
         # recorded and fails verification).  Verified: CxxStdlib emit-module builds
         # against this sysroot with no --gcc-toolchain.  Per-entry symlinks (not
         # `cp -as`) so the dirs stay writable to add the c++/gcc entries.
+        # IMPORTANT: usr/lib intentionally contains ONLY the gcc install dir, NOT
+        # glibc's libs.  glibc's `lib/libc.so` is a TEXT linker script with absolute
+        # GROUP() paths; if it lives inside the sysroot, GNU ld prefixes the sysroot
+        # onto those paths when linking with -sdk/--sysroot ->
+        # "cannot open <sysroot>/nix/store/<glibc>/lib/libc.so.6".  So we keep glibc
+        # OUT of the sysroot's usr/lib: linking finds libc via LIBRARY_PATH (glibc/lib,
+        # OUTSIDE the sysroot -> ld does not prefix its script), and crt via the
+        # shellHook CCC_OVERRIDE `-B${glibc}/lib`.  usr/lib/gcc stays for clang's
+        # libstdc++/gcc-toolchain detection (those crt are real .o, not scripts).
         swiftSysroot = pkgs.runCommandLocal "swift-sysroot" { } ''
           mkdir -p $out/usr/include $out/usr/lib
           for f in ${pkgs.glibc.dev}/include/*; do ln -s "$f" $out/usr/include/; done
-          for f in ${pkgs.glibc}/lib/*;          do ln -s "$f" $out/usr/lib/; done
           ln -s ${pkgs.stdenv.cc.cc}/include/c++ $out/usr/include/c++
           ln -s ${pkgs.stdenv.cc.cc}/lib/gcc     $out/usr/lib/gcc
         '';
