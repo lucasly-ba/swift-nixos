@@ -1,23 +1,39 @@
-# Build Swift from source on NixOS
+# Build Swift from source on NixOS (compiler + C++ interop + Foundation)
 
 A Nix dev shell (`flake.nix`) + build script (`dobuild.sh`) that build the **Swift
-compiler from source on NixOS** — which the stock `swift/utils/build-script` cannot do
-out of the box, because NixOS has no `/usr/include`, `/usr/lib/gcc`, bare `libcurses.so`,
-etc. All the NixOS-specific workarounds live in `flake.nix` (no Swift/LLVM source is
-patched).
+compiler, standard library, C++ interop overlay, libdispatch and Foundation from source on
+NixOS** — which the stock `swift/utils/build-script` cannot do out of the box, because
+NixOS has no `/usr/include`, `/usr/lib/gcc`, bare `libcurses.so`, etc. All the NixOS-specific
+workarounds live in `flake.nix` + `dobuild.sh` (no Swift/LLVM/Foundation source is patched).
 
-**Status: it works.** The built `swiftc` compiles, links, and runs real Swift programs:
+**Status: it works**, including the **C++ interoperability overlay (`CxxStdlib`)** and
+**Foundation**. The built `swiftc` compiles, links, and runs real Swift programs, can
+`import CxxStdlib` and call into C++, and `import Foundation`:
 
 ```
 $ swiftc --version
 Swift version 6.5-dev (LLVM …, Swift …)
+
 $ echo 'print((1...5).map{$0*$0})' > hi.swift && swiftc hi.swift -o hi && ./hi
 [1, 4, 9, 16, 25]
+
+# C++ interop (needs two -Xcc flags on NixOS — see §3):
+$ swiftc -cxx-interoperability-mode=default \
+    -Xcc --gcc-toolchain=$SWIFT_GCC_TOOLCHAIN -Xcc --sysroot=$SWIFT_GLIBC_SYSROOT \
+    -I ./cxxmod main.swift -o demo && ./demo
+hello from C++ std::string
+
+# Foundation (built from source; consume via an installed SDK — see §3):
+$ echo 'import Foundation; print(UUID(), Date(timeIntervalSince1970: 0))' > f.swift
+$ swiftc f.swift -o f <flags, see §3> && ./f
+9A1CDB09-… 1970-01-01 00:00:00 +0000
 ```
 
-A clean single `dobuild.sh` run completes with **exit 0 (0 failures)**. Known limitations
-are listed at the bottom (no Foundation, no C++ interop). **Run only one build at a time**
-— overlapping `build-script` runs share the same `build/` dir and corrupt each other.
+A clean single `dobuild.sh` run completes with **exit 0 (0 failures)** including Foundation.
+The build-system root cause behind the Foundation "hang" (traced with gdb) is documented at
+the bottom. **Run only one build at a time** — overlapping `build-script` runs share the
+same `build/` dir and
+corrupt each other.
 
 > This repo is **only the recipe** (flake + script + notes). You fetch Apple's Swift
 > source yourself (next section).
@@ -49,7 +65,7 @@ swift-workspace/
 ├── flake.nix          ← from this repo
 ├── flake.lock         ← from this repo
 ├── dobuild.sh         ← from this repo
-├── swift/             ← apple/swiftlang swift checkout
+├── swift/             ← swiftlang/swift checkout
 ├── llvm-project/
 ├── llbuild/  cmark/  swift-syntax/  swift-corelibs-*/  …   ← from update-checkout
 └── build/             ← created by the build (large; keep on a roomy filesystem)
@@ -65,19 +81,36 @@ From `swift-workspace/`:
 nix develop --command bash dobuild.sh
 ```
 
-`dobuild.sh` runs `utils/build-script` with three NixOS-specific options (these must go
-on the build-script command line — the `EXTRA_CMAKE_OPTIONS` env var only reaches LLVM's
-CMake, not Swift's):
+`dobuild.sh` runs `utils/build-script` with NixOS-specific options that **must** go on the
+build-script command line (the `EXTRA_CMAKE_OPTIONS` env var only reaches LLVM's CMake,
+not Swift's):
 
 ```sh
 utils/build-script --release-debuginfo --debug-swift --sccache \
+  --libdispatch=1 --foundation=1 \
+  "--common-swift-flags=-sil-verify-none -sdk $SWIFT_CORELIBS_SDK -L $SWIFT_GCC_LIB -Xlinker -rpath-link -Xlinker $SWIFT_GCC_LIB -L $SWIFT_RUNTIME_LIB -Xlinker -rpath-link -Xlinker $SWIFT_RUNTIME_LIB" \
   "--extra-cmake-options=-DSWIFT_SDK_LINUX_ARCH_x86_64_PATH=$SWIFT_GLIBC_SYSROOT" \
-  "--extra-cmake-options=-DSWIFT_ENABLE_EXPERIMENTAL_CXX_INTEROP:BOOL=FALSE" \
+  "--extra-cmake-options=-DSWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=$SWIFT_GCC_TOOLCHAIN;-no-verify-emitted-module-interface'" \
+  "--extra-cmake-options=-DSWIFT_SDK_LINUX_CXX_OVERLAY_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=$SWIFT_GCC_TOOLCHAIN'" \
   "--extra-cmake-options=-DSWIFT_INCLUDE_TESTS:BOOL=FALSE"
 ```
 
-`$SWIFT_GLIBC_SYSROOT` is exported by the flake's `shellHook` (a glibc sysroot the
-stdlib's clang-importer needs to find libc).
+The `--extra-cmake-options` (semicolon-separated CMake lists, single-quoted to survive
+`build-script-impl`'s `eval`) configure the **stdlib + C++ overlay**; the
+`--common-swift-flags` value configures the **corelibs (libdispatch/Foundation) only** —
+see *Building Foundation* below for why each flag is there. The flake's `shellHook` exports
+the paths these reference:
+
+- `$SWIFT_GLIBC_SYSROOT` — a glibc sysroot the stdlib's clang-importer needs to find libc.
+- `$SWIFT_GCC_TOOLCHAIN` — the nix gcc prefix (libstdc++ headers + gcc install dir), which
+  delivers C++ stdlib for the interop overlay.
+- `$SWIFT_CORELIBS_SDK` — an *augmented* sysroot (glibc + the just-built Swift runtime) for
+  the Foundation build; `$SWIFT_GCC_LIB` / `$SWIFT_RUNTIME_LIB` — gcc-lib / core-runtime
+  dirs for the corelibs' indirect-dependency link resolution.
+
+The CMake-list values use `;` separators and are **single-quoted** so the `;` survives
+`build-script-impl`'s internal `eval` — which is why the build command lives in a script
+file rather than being typed inline.
 
 **After editing `flake.nix`** in a way that affects the swift build (e.g. the sysroot),
 force a reconfigure (the relevant flags are baked into `build.ninja`):
@@ -98,11 +131,44 @@ RelWithDebInfo+debug build needs ~60–100 GB on the build filesystem.
 nix develop
 B=build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64
 export LD_LIBRARY_PATH="$B/lib/swift/linux"
+
+# plain Swift — DON'T pass -sdk:
 "$B/bin/swiftc" hello.swift -o hello && ./hello
+
+# C++ interop — pass the gcc-toolchain + sysroot so the importer finds libstdc++:
+"$B/bin/swiftc" -cxx-interoperability-mode=default \
+  -Xcc --gcc-toolchain="$SWIFT_GCC_TOOLCHAIN" -Xcc --sysroot="$SWIFT_GLIBC_SYSROOT" \
+  -I ./cxxmod main.swift -o demo && ./demo
 ```
 
-- **Don't pass `-sdk`** for normal use — the glibc sysroot is only for the stdlib build.
 - A `warning: libc not found for 'x86_64-unknown-linux-gnu'` at compile time is harmless.
+- Without the two `-Xcc` flags, C++ interop fails with *"cannot load underlying module for
+  'CxxStdlib'"* — on NixOS the importer can't find libstdc++ on its own.
+
+### `import Foundation`
+
+The build produces `libFoundation.so` + `Foundation.swiftmodule`, but a raw build dir is
+not a consumable SDK. Install the corelibs once to assemble the proper module layout
+(module maps for `dispatch`, `_FoundationCShims`, `CoreFoundation`, …):
+
+```sh
+SDK=$PWD/foundation-sdk
+DESTDIR=$SDK ninja -C build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/libdispatch-linux-x86_64 install
+DESTDIR=$SDK ninja -C build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/foundation-linux-x86_64 install
+SDKLIB=$SDK/usr/lib/swift
+
+export LD_LIBRARY_PATH="$B/lib/swift/linux"          # core runtime only (swiftc keeps its own Foundation)
+"$B/bin/swiftc" hello.swift -o hello \
+  -sdk "$SWIFT_CORELIBS_SDK" -L "$SWIFT_GCC_LIB" -Xlinker -rpath-link -Xlinker "$SWIFT_GCC_LIB" \
+  -L "$B/lib/swift/linux" -Xlinker -rpath-link -Xlinker "$B/lib/swift/linux" \
+  -I "$SDKLIB/linux" -I "$SDKLIB" -L "$SDKLIB/linux" \
+  -Xlinker -rpath -Xlinker "$B/lib/swift/linux" -Xlinker -rpath -Xlinker "$SDKLIB/linux"
+./hello   # e.g.  import Foundation; print(UUID(), JSONSerialization…) — works
+```
+
+- `LD_LIBRARY_PATH` for the **swiftc invocation** must NOT include the new Foundation:
+  `swiftc` (via `libllbuildSwift`) links the *bootstrap* Foundation and the ABIs differ —
+  bake the new Foundation into the program's **rpath** instead, as above.
 
 ---
 
@@ -126,23 +192,75 @@ Each lives in `flake.nix` with inline comments; the git history has one commit p
    `libdispatch.so` at runtime (nixpkgs uses non-transitive `DT_RUNPATH`).
 5. **stdlib swiftc can't find libc / `SwiftGlibc`** — its clang-importer detects libc via
    the *sysroot's* system includes. Built a glibc `swiftSysroot`, passed as `-sdk
-   <sysroot>` via the build-script CLI; `libc.so`/`libm.so` (linker scripts with absolute
-   paths) are rewritten with relative names so `ld` doesn't sysroot-prefix them.
-6. **Infra** — a `.gitignore` so the Nix flake copies only the recipe files (not the
+   <sysroot>` via the build-script CLI.
+6. **C++ interop (`CxxStdlib`)** — two coupled problems, both solved in `flake.nix` +
+   `dobuild.sh`:
+   - *Link vs. compile conflict.* The overlay's clang-module compile wants glibc's real
+     `libc.so` linker script inside the `-sdk` sysroot, but the bare-clang C++ link then
+     breaks because `ld` sysroot-prefixes that script's absolute `GROUP()` paths. Fix: keep
+     the original `libc.so` and add a **symlink farm** mirroring the glibc store dir *under*
+     the sysroot at its own absolute path, so the prefixed path resolves — satisfying both.
+   - *libstdc++ delivery.* Don't put gcc's c++ headers in the sysroot (that gives libstdc++
+     two file identities → `redefinition of 'piecewise_construct_t'`). Instead deliver it
+     via `-Xcc --gcc-toolchain=<nix-gcc>` on every stdlib swiftc, plus
+     `-no-verify-emitted-module-interface` (the interface round-trip re-verify can't record
+     an `-Xcc` flag, so it would fail to find libstdc++).
+7. **Infra** — a `.gitignore` so the Nix flake copies only the recipe files (not the
    60 GB tree), plus disk GC.
+8. **Foundation under `--debug-swift`** — building Foundation from source revealed a
+   five-layer problem, all fixed via `--common-swift-flags` + an augmented sysroot built in
+   the shellHook (`$SWIFT_CORELIBS_SDK`), see *Building Foundation* below.
 
 ---
 
-## Known limitations / contributions welcome
+## Building Foundation (and how a gdb backtrace cracked the "hang")
 
-- **No C++ interop overlay (`CxxStdlib`).** Genuine clang/ld conflict on NixOS: the
-  compile needs glibc's `libc.so` *inside* the `-sdk` sysroot, but the link breaks with it
-  there (`ld` sysroot-prefixes the linker script's absolute paths). Re-enabling it needs
-  that resolved (e.g. make the C++ link find glibc *outside* the sysroot first).
-- **No Foundation.** Not built (`--skip-build-foundation`). `import Foundation` reports
-  "no such module". A 5.10.x Foundation can't just be grafted onto a 6.5-dev compiler
-  (incompatible `.swiftmodule` format) — it needs building from source.
-- **No relocatable installed toolchain yet.** The build completes cleanly (exit 0) and
-  the working `swiftc` is in `build/.../swift-linux-x86_64/bin/`, but `dobuild.sh` doesn't
-  pass `--install-swift`/install flags, so the `toolchain-…/usr` destdir isn't populated.
-  Add those flags if you want a relocatable toolchain directory.
+`import Foundation` **works** (`dobuild.sh` passes `--foundation=1 --libdispatch=1`). Getting
+there meant building Foundation from source with the just-built compiler — a 5.10.x
+Foundation can't be grafted onto a 6.5-dev compiler (incompatible `.swiftmodule` ABI). That
+build first *appeared to hang* for 30+ minutes in the `FoundationMacros` step. A **gdb**
+backtrace (taking the frontend's stack from a worker thread) showed it was **not** the type
+checker — it was the **SIL verifier**, while the compiler **rebuilt swift-syntax from its
+`.swiftinterface`**. Root cause: the host `swift-syntax` modules were compiled by the
+**bootstrap Swift 5.10.1** (build-script's `CMAKE_Swift_COMPILER`), so the 6.5-dev compiler
+can't load them and rebuilds from the interface. On NixOS that rebuild — and the resulting
+corelibs links — break five different ways. The fix delivers four flags to the **corelibs
+only** (via `--common-swift-flags`, never the compiler/stdlib), plus an augmented sysroot:
+
+1. **`-sil-verify-none`** — skip the assert-only SIL verifier that grinds for minutes per
+   swift-syntax module. (Do *not* add `-disable-sil-ownership-verifier`: it trips an assert
+   in `SemanticARCOpts` under `-O`.)
+2. **`-sdk $SWIFT_CORELIBS_SDK`** — the interface rebuild needs a sysroot to find
+   `SwiftGlibc` (NixOS `/usr/include` is empty; the importer ignores `C_INCLUDE_PATH`/
+   `SDKROOT`). Without it the rebuild retries forever — the real "hang".
+3. **augmented sysroot** — a plain glibc `-sdk` redirects swiftc's runtime lookup, so links
+   can't find `swiftrt.o`. `$SWIFT_CORELIBS_SDK` (built in the shellHook) is glibc **plus a
+   symlink to the just-built Swift runtime**, so one `-sdk` serves both the compile and the
+   links.
+4. **`-L $SWIFT_GCC_LIB -Xlinker -rpath-link …`** — with `-sdk`, `ld` can't find
+   `libswiftCore.so`'s indirect `libstdc++.so.6` NEEDED (an absolute `/nix/store` path
+   outside the sysroot). Point `ld` at the gcc lib.
+5. **`-L $SWIFT_RUNTIME_LIB -Xlinker -rpath-link …`** — likewise so the corelibs *executable*
+   links (`plutil`, FoundationNetworking) resolve `libFoundation.so`'s indirect
+   `libswiftSynchronization.so` NEEDED.
+
+The toggles are written `--foundation=1 --libdispatch=1` (not bare) so build-script's
+argparse doesn't swallow the space-containing `--common-swift-flags` value.
+
+A future cleaner fix is to make the build compile `swift-syntax` with the just-built 6.5-dev
+compiler, so its binary modules load directly and no `.swiftinterface` rebuild happens.
+
+---
+
+## Status summary
+
+| Component                         | State                                    |
+|-----------------------------------|------------------------------------------|
+| Swift compiler + core stdlib      | ✅ builds, runs real programs            |
+| C++ interop overlay (`CxxStdlib`) | ✅ builds, verified `import CxxStdlib`    |
+| libdispatch                       | ✅ builds                                |
+| Foundation                        | ✅ builds, verified `import Foundation` (Date/JSON/UUID/NSString…) |
+| Relocatable installed toolchain   | ⚠️ assemble with `ninja … install DESTDIR=…` (see *import Foundation*) |
+
+A clean single `dobuild.sh` run builds the compiler, the stdlib, the C++ interop overlay,
+libdispatch **and Foundation**, exiting 0 (0 failures) in ~40 min on a warm cache.

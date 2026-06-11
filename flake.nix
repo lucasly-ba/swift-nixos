@@ -84,19 +84,37 @@
         # glibc libs, then OVERWRITE libc.so/libm.so with equivalent scripts that use
         # BARE names, which ld resolves from this same usr/lib (no prefixing).  This
         # satisfies BOTH the overlay compile (libstdc++ found) and the link.
-        # C++ interop (CxxStdlib) is disabled (see dobuild.sh), so this sysroot does
-        # NOT include gcc's c++ headers — having usr/include/c++ in the sysroot makes
-        # the SwiftGlibc *C* clang-module pull in <cmath> -> "redefinition of 'acos'"
-        # -> "could not build C module 'SwiftGlibc'".  We keep ONLY glibc (headers +
-        # libs) for the Glibc overlay, with libc.so/libm.so rewritten to bare names so
-        # the bare-clang link doesn't sysroot-prefix their absolute GROUP paths.
+        # GLIBC-ONLY sysroot (headers + libs), used as the stdlib swiftc's `-sdk`.
+        # It deliberately does NOT contain gcc's c++ headers.  C++ interop is enabled,
+        # but libstdc++ is delivered to swiftc a different way — via `-Xcc
+        # --gcc-toolchain=<nix-gcc>` (see dobuild.sh: SWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS
+        # + the Cxx overlay flags).  This is REQUIRED for correctness: if the sysroot
+        # ALSO carried c++ headers, libstdc++ would be reachable via TWO paths — the
+        # sysroot path (where Swift's ClangImporter injects the `std` clang modulemap)
+        # and the real <nix-gcc> path (where textual #includes + the gcc-toolchain
+        # resolve).  clang then sees bits/stl_pair.h, parse_numbers.h, … under two file
+        # identities and pulls them into BOTH the `std` and `SwiftGlibc` modules ->
+        # "included multiple times" / "redefinition of 'piecewise_construct_t'" etc.
+        # Keeping c++ out of the sysroot routes ALL libstdc++ resolution through the
+        # single <nix-gcc> path (verified in isolation 2026-06-11: import CxxStdlib +
+        # Glibc + std.string() compiles cleanly this way; fails with c++ in sysroot).
+        #
+        # glibc's libc.so/libm.so are kept as their ORIGINAL upstream linker scripts
+        # (the Glibc overlay's libc detection wants a real glibc).  Those scripts have
+        # ABSOLUTE /nix/store/<glibc>/lib/... GROUP() paths; when the bare clang LINKS
+        # a stdlib C++ shared lib (e.g. libswiftRemoteMirror.so) with -sdk (= --sysroot),
+        # GNU ld PREFIXES the sysroot onto them -> tries to open
+        # <sysroot>/nix/store/<glibc>/lib/libc.so.6 (absent) -> "ld.gold: error: cannot
+        # open .../libc.so.6".  FIX (verified in isolation): a SYMLINK FARM — mirror the
+        # glibc store dir UNDER the sysroot at its own absolute path, so the prefixed
+        # path resolves.  Keeps the original scripts (compile OK) AND makes the link
+        # resolve (link OK) without rewriting them.
         swiftSysroot = pkgs.runCommandLocal "swift-sysroot" { } ''
-          mkdir -p $out/usr/include $out/usr/lib
+          mkdir -p $out/usr/include $out/usr/lib $out/nix/store
           for f in ${pkgs.glibc.dev}/include/*; do ln -s "$f" $out/usr/include/; done
           for f in ${pkgs.glibc}/lib/*;          do ln -s "$f" $out/usr/lib/; done
-          rm -f $out/usr/lib/libc.so $out/usr/lib/libm.so
-          printf 'OUTPUT_FORMAT(elf64-x86-64)\nGROUP ( libc.so.6 libc_nonshared.a AS_NEEDED ( ld-linux-x86-64.so.2 ) )\n' > $out/usr/lib/libc.so
-          printf 'OUTPUT_FORMAT(elf64-x86-64)\nGROUP ( libm.so.6 AS_NEEDED ( libmvec.so.1 ) )\n' > $out/usr/lib/libm.so
+          # Symlink farm: make ld's sysroot-prefixed absolute GROUP paths resolve.
+          ln -s ${pkgs.glibc} $out/nix/store/$(basename ${pkgs.glibc})
         '';
       in {
         devShells.default = pkgs.mkShell {
@@ -277,6 +295,41 @@
             # SWIFT_SDK_LINUX_CXX_OVERLAY_SWIFT_COMPILE_FLAGS (verified: replaying
             # CxxStdlib with -Xcc --gcc-toolchain=$SWIFT_GCC_TOOLCHAIN builds it).
             export SWIFT_GCC_TOOLCHAIN="${pkgs.stdenv.cc.cc}"
+
+            # --- Foundation / corelibs augmented sysroot -------------------------
+            # Foundation's macros (compiled by the just-built 6.5-dev compiler) import
+            # swift-syntax, whose HOST modules were built by the BOOTSTRAP swift 5.10.1
+            # and so cannot be loaded -> the compiler REBUILDS swift-syntax from its
+            # .swiftinterface in-process.  That rebuild needs a glibc `-sdk` to find
+            # SwiftGlibc (NixOS /usr/include is empty; the importer ignores
+            # C_INCLUDE_PATH/SDKROOT -- only -sdk/-isysroot work).  But a *plain* glibc
+            # -sdk also redirects swiftc's runtime lookup into the sysroot, so the
+            # corelibs LINKS can't find swiftrt.o / the swift .so's.  Fix: an AUGMENTED
+            # sysroot = glibc (headers + libs + the ld store-farm, all from swiftSysroot)
+            # PLUS a symlink to the just-built swift runtime (usr/lib/swift ->
+            # build/.../lib/swift), so the SAME -sdk satisfies BOTH the macro compile
+            # (SwiftGlibc) and the corelibs links (swiftrt.o + libswift*.so).  Plus
+            # libstdc++/libgcc_s so the link's C++ runtime resolves.  Built here in the
+            # shellHook (not as a nix derivation) because it must reference the build
+            # tree.  dobuild.sh pairs it with `-L $SWIFT_GCC_LIB -Xlinker -rpath-link
+            # -Xlinker $SWIFT_GCC_LIB` so ld also resolves libswiftCore's INDIRECT
+            # libstdc++.so.6 NEEDED, which --sysroot otherwise hides.
+            export SWIFT_GCC_LIB="${pkgs.stdenv.cc.cc.lib}/lib"
+            corelibsSdk="$SWIFT_BUILD_ROOT/corelibs-sdk"
+            swiftRuntime="$SWIFT_BUILD_ROOT/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64/lib/swift"
+            rm -rf "$corelibsSdk"; mkdir -p "$corelibsSdk/usr/lib"
+            ln -sfn "${swiftSysroot}/usr/include" "$corelibsSdk/usr/include"
+            ln -sfn "${swiftSysroot}/nix" "$corelibsSdk/nix"
+            for f in ${swiftSysroot}/usr/lib/*; do ln -sfn "$f" "$corelibsSdk/usr/lib/$(basename "$f")"; done
+            for f in ${pkgs.stdenv.cc.cc.lib}/lib/libstdc++.so* ${pkgs.stdenv.cc.cc.lib}/lib/libgcc_s.so*; do ln -sfn "$f" "$corelibsSdk/usr/lib/$(basename "$f")"; done
+            ln -sfn "$swiftRuntime" "$corelibsSdk/usr/lib/swift"
+            export SWIFT_CORELIBS_SDK="$corelibsSdk"
+            # The core swift runtime dir (libswiftCore/Synchronization/Concurrency/…).
+            # Corelibs EXECUTABLE links (plutil, FoundationNetworking tools) need it on
+            # -L + -rpath-link so ld resolves libFoundation.so's INDIRECT NEEDED
+            # libswiftSynchronization.so etc. (the -sdk sysroot's usr/lib/swift/linux is
+            # NOT in ld's default indirect-dependency search).
+            export SWIFT_RUNTIME_LIB="$swiftRuntime/linux"
 
             echo "Swift 6.5 dev shell — source root: $SWIFT_SOURCE_ROOT"
           '';
