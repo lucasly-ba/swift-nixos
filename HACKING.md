@@ -9,6 +9,17 @@ Everything lives in two files only — `flake.nix` (the environment) and `dobuil
 build command). **No Swift / LLVM / Foundation source is patched.** The git history has one
 commit per fix; read it alongside this doc.
 
+> **Provenance / how to read this.** This document is a **retrospective synthesis**, written
+> in a single pass — not a live journal kept from the first build. The work spans several
+> sessions; this file was assembled from two contemporaneous records: the **git history**
+> (one commit per fix, with detailed messages) and the author's **running working notes**.
+> So calibrate trust accordingly: the early build-up (§2, items 1–8 — i386 builtins, include
+> ordering, the bootstrap compiler, the curses shim, the bare-clang toolchain, the glibc
+> sysroot, C++ interop) is **reconstructed** from those commits and notes; the **Foundation
+> deep-dive (§3)** and the **test-suite frontier (§5)** are **first-hand** from the session
+> that wrote this. When in doubt, the commit history is the primary source — this doc is the
+> map, the commits are the territory.
+
 ---
 
 ## 1. The mental model: why NixOS breaks the build
