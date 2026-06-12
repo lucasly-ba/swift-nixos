@@ -331,6 +331,44 @@
             # NOT in ld's default indirect-dependency search).
             export SWIFT_RUNTIME_LIB="$swiftRuntime/linux"
 
+            # === lit test suite: NixOS toolchain flags, delivered with NO edits to
+            #     the swift/ or llvm-project/ source trees ===================================
+            # Running `check-swift` builds *executables* (and resilient dylibs) with the
+            # just-built BARE clang, which the swift lit.cfg puts first in PATH.  That
+            # clang has no NixOS toolchain knowledge, and lit deliberately sanitizes the
+            # test environment (its hardcoded TestingConfig.py allowlist strips
+            # CCC_OVERRIDE_OPTIONS / NIX_* / CPATH...), so the test builds get none of the
+            # dev-shell's toolchain wiring.  Result on a pristine checkout: executables
+            # link against crt-less / wrong-interpreter defaults and SIGSEGV at startup
+            # (/lib64/ld-linux is nix-ld here, mismatched with the nix glibc in RUNPATH),
+            # and any test that imports StdlibUnittest fails to even compile SwiftGlibc
+            # ("libc not found", NixOS /usr/include is empty).
+            #
+            # The fix uses ONLY swiftc's supported SWIFT_DRIVER_TEST_OPTIONS knob, which
+            # swift's lit.cfg reads from this environment and appends to the build/driver
+            # command lines (but NOT to the swift-frontend line, so -verify/typecheck
+            # tests are untouched).  Everything the sanitized env would otherwise drop is
+            # re-supplied here as explicit compiler flags:
+            #   -Xcc --sysroot=<glibc sysroot>  : the ClangImporter finds the target libc
+            #       so it can (re)build the SwiftGlibc clang module (StdlibUnittest tests).
+            #   -Xclang-linker -B<glibc>/lib    : glibc crt (crt1/crti/crtn/Scrt1.o).
+            #   -Xclang-linker --gcc-install-dir=<gcc> : gcc crtbegin/crtend + libgcc.
+            #   -Xclang-linker -Wl,--dynamic-linker,<nix glibc ld.so> : the correct program
+            #       interpreter, so executables don't fall back to /lib64 (nix-ld) and crash.
+            #   -Xclang-linker -Wno-unused-command-line-argument : the above are link-only;
+            #       silence the warning on the rare driver test that only compiles.
+            #   -L <gcc lib> -Xlinker -rpath-link -Xlinker <gcc lib> : resolve libswiftCore's
+            #       INDIRECT libstdc++.so.6 NEEDED at link.
+            # This mirrors the CCC_OVERRIDE_OPTIONS toolchain completion the main build
+            # uses, but scoped to the test harness via a public env var instead of patching
+            # lit.  Verified: Parse 252/252 + the executable Parse tests pass; Interpreter
+            # 259/260 (the lone failure is an unrelated LTO/lld issue).
+            # NOTE the leading space: swift's lit.cfg does `swift_driver_test_options +=
+            # os.environ['SWIFT_DRIVER_TEST_OPTIONS']` with no separator, so without it the
+            # first token glues onto the preceding -Xfrontend '...' option and swiftc sees
+            # a mangled argument.
+            export SWIFT_DRIVER_TEST_OPTIONS=" -Xcc --sysroot=${swiftSysroot} -Xclang-linker -B${pkgs.glibc}/lib -Xclang-linker --gcc-install-dir=${pkgs.stdenv.cc.cc}/lib/gcc/${pkgs.stdenv.hostPlatform.config}/${pkgs.stdenv.cc.cc.version} -Xclang-linker -Wl,--dynamic-linker,${pkgs.glibc}/lib/ld-linux-x86-64.so.2 -Xclang-linker -Wno-unused-command-line-argument -L ${pkgs.stdenv.cc.cc.lib}/lib -Xlinker -rpath-link -Xlinker ${pkgs.stdenv.cc.cc.lib}/lib"
+
             echo "Swift 6.5 dev shell — source root: $SWIFT_SOURCE_ROOT"
           '';
         };
