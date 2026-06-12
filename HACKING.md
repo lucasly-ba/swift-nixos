@@ -157,13 +157,28 @@ program's rpath instead.
 What works today: **compiler + stdlib + C++ interop + libdispatch + Foundation**, all from
 source, `dobuild.sh` exits 0. Open items, roughly in priority for *contributing*:
 
-1. **Run the test suite (`check-swift` / lit).** This is the real gap before you can validate
-   a compiler change like an Ubuntu contributor. `dobuild.sh` sets `SWIFT_INCLUDE_TESTS=FALSE`;
-   flip it to `TRUE`, `rm` the swift `CMakeCache.txt`, rebuild, then run a small slice first,
-   e.g. `utils/run-test --build-dir build/Ninja-RelWithDebInfoAssert+swift-DebugAssert
-   swift/test/Parse`. Expect NixOS-specific issues in tests that compile+link (they need the
-   dev-shell env; some may assume FHS paths or `RUN:` lines with system tools). Getting a
-   green lit slice = the "I can develop Swift on NixOS like on Ubuntu" milestone.
+1. **Run the test suite (`check-swift` / lit).** *Partially done — the harness works.* To
+   enable it: flip `dobuild.sh`'s `SWIFT_INCLUDE_TESTS` to `TRUE`, `rm` the swift
+   `CMakeCache.txt`, rebuild (this regenerates `swift-linux-x86_64/test-linux-x86_64/` with
+   the lit config), then run a slice:
+   `build/.../llvm-linux-x86_64/bin/llvm-lit -j8 build/.../swift-linux-x86_64/test-linux-x86_64/Parse`.
+   **Result: `swift/test/Parse` = 255/261 pass.** The harness runs and the **non-executable
+   tests (typecheck / parse / SIL / `-verify` — the bulk of compiler & stdlib work) pass out
+   of the box.** The 6 failures are all `*executable*` tests, and the cause is one thing:
+   **lit builds a sanitized test environment** (a hardcoded allowlist in LLVM's
+   `lit/TestingConfig.py`) that strips `CCC_OVERRIDE_OPTIONS` — the var that makes our bare
+   clang a complete toolchain (crt objects via `-B<glibc>`/`--gcc-install-dir`, and the
+   indirect `libstdc++`). So the test binaries can't link (`cannot find Scrt1.o`, then
+   `libswiftCore.so: undefined reference to __cxa_guard_acquire@CXXABI`). Threading the flags
+   back in is awkward: `SWIFT_TEST_OPTIONS` reaches `swift-frontend` invocations too (so
+   link-only flags like `-Xclang-linker`/`-Xlinker` break the 255 passing frontend tests),
+   and `-sdk <augmented-sysroot>` gets crt but not the indirect `libstdc++` rpath-link. The
+   **clean fix** is to let lit preserve `CCC_OVERRIDE_OPTIONS` (it's a *clang* env var, so it
+   fixes the link without touching `swift-frontend` arg parsing) — i.e. add it to the
+   `pass_vars` allowlist in `llvm-project/llvm/utils/lit/lit/TestingConfig.py`, the one place
+   this needs a (tiny, test-only) change; or run the executable tests through a swiftc-driver
+   wrapper that appends the link flags. Until then: **non-executable tests are fully usable
+   for compiler/stdlib development on NixOS** — which is most of what a contributor runs.
 2. **The clean Foundation fix.** Make the build compile `swift-syntax` with the just-built
    6.5-dev compiler so its binary modules load directly — then *none* of the §3 corelibs
    flags are needed (no `.swiftinterface` rebuild, no verifier, no augmented sysroot). This is
