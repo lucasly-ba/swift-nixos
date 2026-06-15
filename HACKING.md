@@ -34,14 +34,23 @@ is an instance of one:
 1. **Header search order.** Mixing glibc and libstdc++ headers in the wrong order breaks
    libstdc++'s `#include_next` (it searches *forward* only). The nix cc-wrapper already
    orders them right; our job is to *not* disturb that, and to feed the *unwrapped* compilers
-   the headers they're missing — in the right position (`CPLUS_INCLUDE_PATH`/`C_INCLUDE_PATH`,
-   which append like `-idirafter`, never `CPATH`).
+   the headers they're missing — in the right position. libstdc++ comes via
+   `--gcc-install-dir` and glibc via `-idirafter` (both in `CCC_OVERRIDE_OPTIONS`), never
+   `CPATH`/`CPLUS_INCLUDE_PATH`. Subtlety (bit us under gcc 15): `CPLUS_INCLUDE_PATH`
+   injects like `-isystem`, which `-nostdinc++` does **not** suppress, so the gcc
+   `include/c++` dir leaked into compiler-rt's `-nostdinc++` sanitizer TUs — their
+   `#include <math.h>` then hit libstdc++'s `math.h` wrapper → `<cmath>` → `stl_pair.h`'s
+   `std::array` forward-decl, colliding with `sanitizer_redefine_builtins.h`'s poisoned
+   `array`. `--gcc-install-dir`'s libstdc++ dirs *are* suppressed by `-nostdinc++`, so they
+   feed the normal C++ TUs without touching compiler-rt. The hook `unset`s
+   `CPLUS_INCLUDE_PATH`/`CPATH` so an inherited value can't resurrect the leak.
 
 2. **The bare, freshly-built clang is not a toolchain.** The build compiles its *own* clang,
    then uses that **unwrapped** clang (no nix cc-wrapper) to build the stdlib/runtime. It
    knows no NixOS paths, so it can't find `-lstdc++`, `crt1.o`, etc. We make it complete via
    env: `LIBRARY_PATH` (for `-l` libs), `CCC_OVERRIDE_OPTIONS` (`-B<glibc>` + `--gcc-install-dir`
-   for crt objects, which clang finds via toolchain detection, *not* `LIBRARY_PATH`).
+   for crt objects, which clang finds via toolchain detection, *not* `LIBRARY_PATH`;
+   `--gcc-install-dir` also supplies libstdc++ headers, `-idirafter <glibc>` the glibc ones).
 
 3. **Runtime loading (`DT_RUNPATH` vs `RPATH`).** nixpkgs forces non-transitive `DT_RUNPATH`,
    but Swift's build assumes transitive `RPATH` (a tool's rpath finds the *whole* runtime).

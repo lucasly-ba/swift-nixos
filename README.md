@@ -215,9 +215,14 @@ Each lives in `flake.nix` with inline comments; the git history has one commit p
    the cc-wrapper's correctly-placed copy, so libstdc++'s `<cmath>` couldn't reach glibc.
    Fix: don't add `glibc.dev` as a buildInput; let the wrapper place it.
 2. **The just-built (unwrapped) clang that compiles the stdlib** knows no NixOS paths.
-   Fixes: `CPLUS_INCLUDE_PATH` (libstdc++ + glibc headers), `LIBRARY_PATH` (`-lstdc++` /
-   `-lgcc_s`), and `CCC_OVERRIDE_OPTIONS` (`--gcc-install-dir` + `-B <glibc>` for the crt
-   startup objects).
+   Fixes via `LIBRARY_PATH` (`-lstdc++` / `-lgcc_s`) and `CCC_OVERRIDE_OPTIONS`, which
+   injects `--gcc-install-dir` (libstdc++ headers + libs + crt), `-B <glibc>` (glibc crt
+   startup objects) and `-idirafter <glibc>/include` (glibc C headers, placed last so
+   libstdc++'s `#include_next <math.h>`/`<stdlib.h>` resolves to them). Headers are *not*
+   delivered via `CPLUS_INCLUDE_PATH` — that injects like `-isystem`, which `-nostdinc++`
+   does **not** suppress, so it leaked gcc's `include/c++` into compiler-rt's sanitizers
+   and (under gcc 15) broke them with "redefinition of 'array'". `--gcc-install-dir` *is*
+   suppressed by `-nostdinc++`, so compiler-rt stays clean.
 3. **`-lcurses`** — nixpkgs has no bare `libcurses.so`; a `libncursesw` compat shim.
    Plus `CC/CXX=clang` (so llbuild doesn't fall back to g++) and
    `-Wno-unused-command-line-argument` (libdispatch's C is built with `-Werror`).

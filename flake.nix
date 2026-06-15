@@ -215,7 +215,12 @@
             # --- libc header visibility on NixOS ---------------------------------
             # Two different compilers need glibc headers and neither finds them by
             # default; CPATH must stay unset because it breaks C++ #include_next.
-            unset CPATH
+            # CPLUS_INCLUDE_PATH must ALSO stay unset: we no longer set it (libstdc++
+            # comes via --gcc-install-dir, glibc via -idirafter — see 1b/1d), but an
+            # inherited value (e.g. direnv re-entry, or a nested `nix develop`) would
+            # otherwise leak gcc's include/c++/<ver> into compiler-rt's -nostdinc++
+            # TUs and resurrect the gcc-15 "redefinition of 'array'" build failure.
+            unset CPATH CPLUS_INCLUDE_PATH
 
             # 1. The freshly-built, *non*-nix-wrapped clang (build/.../bin/clang)
             #    compiles compiler-rt's builtins AND the Swift stdlib/runtime C
@@ -225,12 +230,25 @@
 
             # 1b. That same bare clang also compiles the stdlib/runtime *C++* sources
             #     (CommandLine.cpp, Demangler.cpp, …) and so needs gcc's libstdc++
-            #     headers (algorithm, cstdint) + glibc (inttypes.h via #include_next).
-            #     CPLUS_INCLUDE_PATH is appended after the system dirs (like
-            #     -idirafter), so it preserves include_next ordering (unlike CPATH).
-            #     Order: libstdc++, libstdc++/<triple>, then glibc.  Verified this
-            #     does NOT disturb the nix-wrapped clang (its copies dedup first).
-            export CPLUS_INCLUDE_PATH="${pkgs.stdenv.cc.cc}/include/c++/${pkgs.stdenv.cc.cc.version}:${pkgs.stdenv.cc.cc}/include/c++/${pkgs.stdenv.cc.cc.version}/${pkgs.stdenv.hostPlatform.config}:${pkgs.glibc.dev}/include''${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}"
+            #     headers (algorithm, cstdint) + glibc (stdlib.h/math.h via
+            #     #include_next).  We DELIBERATELY do NOT use CPLUS_INCLUDE_PATH for
+            #     this any more.  CPLUS_INCLUDE_PATH dirs are injected like -isystem
+            #     and are NOT suppressed by -nostdinc++, so putting gcc's
+            #     include/c++/<ver> there leaks it into compiler-rt's sanitizer TUs
+            #     (which build with -nostdinc++).  With gcc 15 that is fatal: the
+            #     sanitizers' `#include <math.h>` then resolves to libstdc++'s math.h
+            #     wrapper -> <cmath> -> bits/stl_pair.h, which forward-declares
+            #     std::array, colliding with sanitizer_redefine_builtins.h's poisoned
+            #     `array` ("redefinition of 'array' as different kind of symbol").
+            #     Instead libstdc++ is delivered via --gcc-install-dir and glibc via
+            #     -idirafter, BOTH in CCC_OVERRIDE_OPTIONS below (see 1d).  That keeps
+            #     the C++ TUs working (libstdc++ found; its #include_next <math.h>/
+            #     <stdlib.h> reach glibc, which -idirafter places dead last) AND keeps
+            #     compiler-rt clean (--gcc-install-dir's libstdc++ dirs ARE suppressed
+            #     by -nostdinc++, so the sanitizers' <math.h> hits glibc's C header).
+            #     Verified 2026-06-16 against gcc 15.2.0: nsan/asan compile under
+            #     -nostdinc++, and a normal libstdc++ C++ TU compiles+links+runs on
+            #     both the bare and the nix-wrapped clang.
 
             # 1c. The bare clang also *links* the stdlib/runtime shared libraries
             #     (e.g. libswiftRemoteMirror.so) with -fuse-ld=gold, and unwrapped
@@ -249,12 +267,20 @@
             #     detects no toolchain on NixOS (sysroot is "/", which is empty).
             #     CCC_OVERRIDE_OPTIONS injects driver flags into EVERY clang call:
             #       --gcc-install-dir=<gcc>/lib/gcc/<triple>/<ver>  -> gcc crtbegin/
-            #         crtend + libgcc + libstdc++ headers/libs, correctly ordered;
+            #         crtend + libgcc + libstdc++ headers/libs, correctly ordered AND
+            #         (unlike CPLUS_INCLUDE_PATH) suppressed by -nostdinc++, so it
+            #         supplies libstdc++ to the C++ TUs without leaking into compiler-rt
+            #         (see 1b);
             #       -B<glibc>/lib                                   -> glibc's
-            #         crt1/crti/crtn/Scrt1.o.
+            #         crt1/crti/crtn/Scrt1.o;
+            #       -idirafter <glibc>/include                      -> glibc's C headers
+            #         placed dead last, so libstdc++'s #include_next <math.h>/<stdlib.h>
+            #         and compiler-rt's <math.h> both resolve to glibc (this replaces
+            #         the old CPLUS_INCLUDE_PATH glibc entry, which sat too early).
             #     ('+' appends the arg.)  Verified this does not regress the
-            #     nix-wrapped clang (it already has a consistent gcc/glibc).
-            export CCC_OVERRIDE_OPTIONS="+-B${pkgs.glibc}/lib +--gcc-install-dir=${pkgs.stdenv.cc.cc}/lib/gcc/${pkgs.stdenv.hostPlatform.config}/${pkgs.stdenv.cc.cc.version}"
+            #     nix-wrapped clang (it already has a consistent gcc/glibc; the extra
+            #     -idirafter glibc is lowest-priority and never shadows its own copies).
+            export CCC_OVERRIDE_OPTIONS="+-B${pkgs.glibc}/lib +--gcc-install-dir=${pkgs.stdenv.cc.cc}/lib/gcc/${pkgs.stdenv.hostPlatform.config}/${pkgs.stdenv.cc.cc.version} +-idirafter +${pkgs.glibc.dev}/include"
 
             # 2. The nix-wrapped clang (llbuild, swift-driver, …) must NOT have
             #    glibc forced onto the FRONT of its include path.  The cc-wrapper
