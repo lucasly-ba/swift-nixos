@@ -42,19 +42,15 @@ corrupt each other.
 
 ## 1. Get the Swift source
 
-This was developed/tested against:
-
-- Swift: `swiftlang/swift` `main` @ **`87350fc6de2da3156bb7e893c45d673df4ca3cb7`**
-  (snapshot 2026-05-27). Other revisions may need tweaks (some fixes reference current
-  file/line locations in the Swift source).
-- nixpkgs: pinned in `flake.lock` (gcc 15.2.0 / glibc 2.42 toolchain).
+Built against `swiftlang/swift` `main` HEAD, with nixpkgs pinned in `flake.lock`
+(gcc 15.2.0 / glibc 2.42 toolchain). `main` moves fast and this repo tracks it — if a fix
+lands a beat behind HEAD, open an issue.
 
 Copy-paste the whole block (it's safe to paste as-is):
 
 ```sh
 mkdir swift-workspace && cd swift-workspace
 git clone https://github.com/swiftlang/swift.git
-git -C swift checkout 87350fc6de2da3156bb7e893c45d673df4ca3cb7
 
 # Fetch this repo's recipe files into swift-workspace (the parent of swift/)
 for f in flake.nix flake.lock dobuild.sh .gitignore; do
@@ -81,39 +77,22 @@ swift-workspace/
 └── build/             ← created by the build (large; keep on a roomy filesystem)
 ```
 
-### Building from current `main` instead of the pinned snapshot
+### Keeping the workspace consistent on `main`
 
-The checkout above pins a *known-good coordinate*: the snapshot the pinned toolchain
-(gcc 15.2.0 / glibc 2.42, from `flake.lock`) is verified to build. Pin it if you just want a
-build that comes up clean.
-
-If instead you're **contributing to `swiftlang/swift`** and want to track `main`, skip the
-`git checkout` line:
-
-```sh
-mkdir swift-workspace && cd swift-workspace
-git clone https://github.com/swiftlang/swift.git
-# (no git checkout — stay on main HEAD)
-swift/utils/update-checkout --clone
-```
-
-Two things to keep in mind on `main`:
-
-- **Always run `update-checkout`, and re-run it after every `git pull` of `swift/`.** It
-  pins the sibling repos (llvm-project, swift-syntax, corelibs, …) to the revisions that
-  match your `swift/` HEAD, keeping the workspace internally consistent — the siblings move
-  *with* swift.
-- **The flake/`dobuild.sh` fixes become yours to maintain.** The NixOS-specific fixes (the
+- **Re-run `update-checkout` after every `git pull` of `swift/`.** It pins the sibling repos
+  (llvm-project, swift-syntax, corelibs, …) to the revisions that match your `swift/` HEAD,
+  keeping the workspace internally consistent — the siblings move *with* swift. Run it the
+  same way: `nix develop --command swift/utils/update-checkout`.
+- **The flake/`dobuild.sh` fixes are the part you maintain.** The NixOS-specific fixes (the
   `#include_next` glibc ordering, the sysroot, the rpath/`-rpath-link` flags — see *What was
-  fixed* below) were tuned against a frozen source+toolchain pair. You're now building newer
-  source against a *fixed* toolchain, so that mismatch is where breakage appears first. When
-  it breaks, the question is "did Swift change, or did a toolchain assumption change" — the
-  flake is the part you own.
+  fixed* below) are tuned against the pinned toolchain (gcc 15.2.0 / glibc 2.42). Building
+  newer `main` source against that fixed toolchain is where breakage appears first: the
+  question is "did Swift change, or did a toolchain assumption change" — the flake is the
+  part you own.
 
 Cheap insurance: when a build comes up clean, note the `swift/` commit hash
 (`git -C swift rev-parse HEAD`). If a later `git pull` breaks the build, that gives you a
-"this worked" coordinate to `git log` / bisect against — and the pinned `87350fc…` above is
-always a known-good fallback to diff against.
+"this worked" coordinate to `git log` / bisect against.
 
 ---
 
