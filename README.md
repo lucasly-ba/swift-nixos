@@ -98,6 +98,7 @@ not Swift's):
 utils/build-script --release-debuginfo --debug-swift --sccache \
   --libdispatch=1 --foundation=1 \
   "--common-swift-flags=-sil-verify-none -sdk $SWIFT_CORELIBS_SDK -L $SWIFT_GCC_LIB -Xlinker -rpath-link -Xlinker $SWIFT_GCC_LIB -L $SWIFT_RUNTIME_LIB -Xlinker -rpath-link -Xlinker $SWIFT_RUNTIME_LIB" \
+  "--extra-cmake-options=-DLLVM_PARALLEL_LINK_JOBS=1" \
   "--extra-cmake-options=-DSWIFT_SDK_LINUX_ARCH_x86_64_PATH=$SWIFT_GLIBC_SYSROOT" \
   "--extra-cmake-options=-DSWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=$SWIFT_GCC_TOOLCHAIN;-no-verify-emitted-module-interface'" \
   "--extra-cmake-options=-DSWIFT_SDK_LINUX_CXX_OVERLAY_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=$SWIFT_GCC_TOOLCHAIN'" \
@@ -131,6 +132,28 @@ rm build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64/CMakeCa
 **Disk:** `/` holds `/nix/store` (and `/tmp`); the build dir goes on `/home`. The store
 can fill during development — if you hit `ENOSPC`, run `nix-collect-garbage -d`. A full
 RelWithDebInfo+debug build needs ~60–100 GB on the build filesystem.
+
+**RAM / "my terminal crashed after ~1h30":** that's the OOM-killer, not a build bug. The
+first hour compiles (cheap); then the **link phase** starts, and with `--release-debuginfo`
++ `--debug-swift` each link pulls GBs of debug info into RAM. On a low-RAM laptop the
+default (one link per core) blows past memory and the kernel kills processes — sometimes the
+terminal/session too. `dobuild.sh` already sets `-DLLVM_PARALLEL_LINK_JOBS=1` to serialise
+links. If it still dies, **add swap** — that turns OOM-death into "slow but finishes":
+
+```nix
+# configuration.nix — then: sudo nixos-rebuild switch
+zramSwap = { enable = true; memoryPercent = 75; };
+swapDevices = [ { device = "/swapfile"; size = 16 * 1024; } ];  # 16 GiB
+```
+
+Rule of thumb: ~12 GB RAM needs `LLVM_PARALLEL_LINK_JOBS=1` **and** swap; with ≥32 GB you
+can raise it to 2–4 to link faster. Confirm a kill with
+`journalctl -k -b | grep -i 'oom\|killed process'`.
+
+**Resuming after a crash:** just re-run `nix develop --command bash dobuild.sh`. The build is
+incremental (ninja + `--sccache`), so it picks up from the killed step instead of starting
+over — don't delete `build/`. (Run it through `nix develop` so the toolchain env is set; a
+bare `sh dobuild.sh` outside the dev shell won't work.)
 
 ---
 
