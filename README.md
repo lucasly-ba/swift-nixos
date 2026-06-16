@@ -165,6 +165,7 @@ B=build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64
 export LD_LIBRARY_PATH="$B/lib/swift/linux"
 
 # plain Swift — DON'T pass -sdk:
+echo 'print("hello from a swiftc I built")' > hello.swift
 "$B/bin/swiftc" hello.swift -o hello && ./hello
 
 # C++ interop — pass the gcc-toolchain + sysroot so the importer finds libstdc++:
