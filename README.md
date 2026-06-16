@@ -42,47 +42,24 @@ corrupt each other.
 
 ## 1. Get the Swift source
 
-Built against `swiftlang/swift` `main` HEAD, with nixpkgs pinned in `flake.lock`
-(gcc 15.2.0 / glibc 2.42 toolchain). `main` moves fast and this repo tracks it — if a fix
-lands a beat behind HEAD, open an issue.
-
-Copy-paste the whole block (it's safe to paste as-is):
+Built against `swiftlang/swift` `main` HEAD (nixpkgs pinned in `flake.lock` — gcc 15.2.0 /
+glibc 2.42). Clone this repo as the workspace, clone Swift into it, then pull the siblings:
 
 ```sh
-mkdir swift-workspace && cd swift-workspace
+git clone https://github.com/lucasly-ba/swift-nixos.git swift-workspace
+cd swift-workspace
 git clone https://github.com/swiftlang/swift.git
-
-# Fetch this repo's recipe files into swift-workspace (the parent of swift/)
-for f in flake.nix flake.lock dobuild.sh .gitignore; do
-  curl -fsSLO https://raw.githubusercontent.com/lucasly-ba/swift-nixos/main/$f
-done
-
-# Make swift-workspace a "git flake": with the .gitignore in place, nix then copies
-# ONLY these recipe files into the store — not the ~60G swift/, llvm-project/, build/
-# trees. This is required: a flake in a git repo only sees git-tracked files, so nix
-# can't even find flake.nix until it's added.
-git init -q && git add .gitignore flake.nix flake.lock dobuild.sh
-
-# Clone the sibling repos (llvm-project, llbuild, cmark, swift-syntax, corelibs, …).
-# Run it through the dev shell so python3 is on PATH — update-checkout needs it.
 nix develop --command swift/utils/update-checkout --clone
 ```
 
-Running `update-checkout` inside `nix develop` is what avoids
-`env: 'python3': No such file or directory` — NixOS has no system `python3`, but the flake
-provides one. The `git init` + `git add` matters too: without it, either nix can't find the
-flake (a flake in a git repo only sees tracked files) or — outside a repo — it copies the
-entire source+build tree into the store. That leaves you with this layout (the recipe files
-alongside `swift/`):
+Run `update-checkout` through `nix develop` so the flake's `python3` is on PATH (NixOS has
+none, so running it directly gives `env: 'python3': No such file or directory`). Layout:
 
 ```
-swift-workspace/
-├── flake.nix          ← from this repo
-├── flake.lock         ← from this repo
-├── dobuild.sh         ← from this repo
-├── swift/             ← swiftlang/swift checkout
-├── llvm-project/
-├── llbuild/  cmark/  swift-syntax/  swift-corelibs-*/  …   ← from update-checkout
+swift-workspace/        ← this repo (swift-nixos), cloned
+├── flake.nix flake.lock dobuild.sh .gitignore
+├── swift/              ← swiftlang/swift
+├── llvm-project/  llbuild/  cmark/  swift-syntax/  …   ← from update-checkout
 └── build/             ← created by the build (large; keep on a roomy filesystem)
 ```
 
