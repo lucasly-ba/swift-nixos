@@ -98,11 +98,16 @@
 # Flip the last flag to -DSWIFT_INCLUDE_TESTS:BOOL=TRUE, `rm` the swift CMakeCache.txt to
 # reconfigure, and rebuild; OR run lit directly:
 #   utils/run-test --build-dir build/Ninja-RelWithDebInfoAssert+swift-DebugAssert <path>
+# LLVM_PARALLEL_LINK_JOBS=1: with --release-debuginfo + --debug-swift every link pulls
+# GBs of debug info into RAM; the default (one link per core) OOM-kills low-RAM machines
+# in the link phase (~1h30 in), often taking the terminal/session with it. Serialise links
+# so only one runs at a time.  Bump to 2 if you have plenty of RAM + swap and want it faster.
 set -u
 cd "$(dirname "$0")/swift"
 exec utils/build-script --release-debuginfo --debug-swift --sccache \
   --libdispatch=1 --foundation=1 \
   "--common-swift-flags=-sil-verify-none -sdk ${SWIFT_CORELIBS_SDK} -L ${SWIFT_GCC_LIB} -Xlinker -rpath-link -Xlinker ${SWIFT_GCC_LIB} -L ${SWIFT_RUNTIME_LIB} -Xlinker -rpath-link -Xlinker ${SWIFT_RUNTIME_LIB}" \
+  "--extra-cmake-options=-DLLVM_PARALLEL_LINK_JOBS=1" \
   "--extra-cmake-options=-DSWIFT_SDK_LINUX_ARCH_x86_64_PATH=${SWIFT_GLIBC_SYSROOT}" \
   "--extra-cmake-options=-DSWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=${SWIFT_GCC_TOOLCHAIN};-no-verify-emitted-module-interface'" \
   "--extra-cmake-options=-DSWIFT_SDK_LINUX_CXX_OVERLAY_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=${SWIFT_GCC_TOOLCHAIN}'" \
