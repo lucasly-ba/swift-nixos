@@ -57,6 +57,12 @@ for f in flake.nix flake.lock dobuild.sh .gitignore; do
   curl -fsSLO https://raw.githubusercontent.com/lucasly-ba/swift-nixos/main/$f
 done
 
+# Make swift-workspace a "git flake": with the .gitignore in place, nix then copies
+# ONLY these recipe files into the store — not the ~60G swift/, llvm-project/, build/
+# trees. This is required: a flake in a git repo only sees git-tracked files, so nix
+# can't even find flake.nix until it's added.
+git init -q && git add .gitignore flake.nix flake.lock dobuild.sh
+
 # Clone the sibling repos (llvm-project, llbuild, cmark, swift-syntax, corelibs, …).
 # Run it through the dev shell so python3 is on PATH — update-checkout needs it.
 nix develop --command swift/utils/update-checkout --clone
@@ -64,7 +70,10 @@ nix develop --command swift/utils/update-checkout --clone
 
 Running `update-checkout` inside `nix develop` is what avoids
 `env: 'python3': No such file or directory` — NixOS has no system `python3`, but the flake
-provides one. That leaves you with this layout (the recipe files alongside `swift/`):
+provides one. The `git init` + `git add` matters too: without it, either nix can't find the
+flake (a flake in a git repo only sees tracked files) or — outside a repo — it copies the
+entire source+build tree into the store. That leaves you with this layout (the recipe files
+alongside `swift/`):
 
 ```
 swift-workspace/
