@@ -49,16 +49,26 @@ This was developed/tested against:
   file/line locations in the Swift source).
 - nixpkgs: pinned in `flake.lock` (gcc 15.2.0 / glibc 2.42 toolchain).
 
+Copy-paste the whole block (it's safe to paste as-is):
+
 ```sh
 mkdir swift-workspace && cd swift-workspace
 git clone https://github.com/swiftlang/swift.git
-( cd swift && git checkout 87350fc6de2da3156bb7e893c45d673df4ca3cb7 )
-# Clone the sibling repos (llvm-project, llbuild, cmark, swift-syntax, corelibs, …)
-swift/utils/update-checkout --clone
+git -C swift checkout 87350fc6de2da3156bb7e893c45d673df4ca3cb7
+
+# Fetch this repo's recipe files into swift-workspace (the parent of swift/)
+for f in flake.nix flake.lock dobuild.sh .gitignore; do
+  curl -fsSLO https://raw.githubusercontent.com/lucasly-ba/swift-nixos/main/$f
+done
+
+# Clone the sibling repos (llvm-project, llbuild, cmark, swift-syntax, corelibs, …).
+# Run it through the dev shell so python3 is on PATH — update-checkout needs it.
+nix develop --command swift/utils/update-checkout --clone
 ```
 
-Then drop **this repo's** `flake.nix`, `flake.lock`, `dobuild.sh` (and `.gitignore`) into
-`swift-workspace/` (the parent of `swift/`). Final layout:
+Running `update-checkout` inside `nix develop` is what avoids
+`env: 'python3': No such file or directory` — NixOS has no system `python3`, but the flake
+provides one. That leaves you with this layout (the recipe files alongside `swift/`):
 
 ```
 swift-workspace/
