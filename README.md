@@ -17,26 +17,33 @@ Swift / LLVM / Foundation source is patched.
 
 > **Heads up:** a bare `swiftc` on your `PATH` is the **bootstrap** compiler Nix uses to
 > *build* Swift (`Swift version 5.10.1`), not the one you built. The compiler you build
-> lives in the build dir as `$B/bin/swiftc` (`B` is defined in §3). The snippets below use
+> lives in the build dir as `$SWIFTC` (defined in the note below). The snippets below use
 > that built compiler, the only `swiftc` that reports `6.5-dev`.
+
+`SWIFTC` is the compiler you just built,
+`build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64/bin/swiftc` (the same path
+`nix run .#smoke-test` uses). The README only ever invokes `swiftc` and the platform runtime dir,
+so it points the variable straight at the swift tree. `CONTRIBUTING.md` anchors `$B` one level up
+at the build dir instead, because its test commands also reach the sibling LLVM tree.
 
 ```
 $ B=build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64
-$ "$B/bin/swiftc" --version
+$ SWIFTC="$B/bin/swiftc"
+$ "$SWIFTC" --version
 Swift version 6.5-dev (LLVM …, Swift …)
 
-$ echo 'print((1...5).map{$0*$0})' > hi.swift && "$B/bin/swiftc" hi.swift -o hi && ./hi
+$ echo 'print((1...5).map{$0*$0})' > hi.swift && "$SWIFTC" hi.swift -o hi && ./hi
 [1, 4, 9, 16, 25]
 
 # C++ interop (needs two -Xcc flags on NixOS; see §3):
-$ "$B/bin/swiftc" -cxx-interoperability-mode=default \
+$ "$SWIFTC" -cxx-interoperability-mode=default \
     -Xcc --gcc-toolchain=$SWIFT_GCC_TOOLCHAIN -Xcc --sysroot=$SWIFT_GLIBC_SYSROOT \
     -I ./cxxmod main.swift -o demo && ./demo
 hello from C++ std::string
 
 # Foundation (built from source; consume via an installed SDK; see §3):
 $ echo 'import Foundation; print(UUID(), Date(timeIntervalSince1970: 0))' > f.swift
-$ "$B/bin/swiftc" f.swift -o f <flags, see §3> && ./f
+$ "$SWIFTC" f.swift -o f <flags, see §3> && ./f
 9A1CDB09-… 1970-01-01 00:00:00 +0000
 ```
 
@@ -174,14 +181,15 @@ bare `sh dobuild.sh` outside the dev shell won't work.)
 ```sh
 nix develop
 B=build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64
+SWIFTC="$B/bin/swiftc"
 export LD_LIBRARY_PATH="$B/lib/swift/linux"
 
 # plain Swift, DON'T pass -sdk:
 echo 'print("hello from a swiftc I built")' > hello.swift
-"$B/bin/swiftc" hello.swift -o hello && ./hello
+"$SWIFTC" hello.swift -o hello && ./hello
 
 # C++ interop (pass the gcc-toolchain + sysroot so the importer finds libstdc++):
-"$B/bin/swiftc" -cxx-interoperability-mode=default \
+"$SWIFTC" -cxx-interoperability-mode=default \
   -Xcc --gcc-toolchain="$SWIFT_GCC_TOOLCHAIN" -Xcc --sysroot="$SWIFT_GLIBC_SYSROOT" \
   -I ./cxxmod main.swift -o demo && ./demo
 ```
@@ -203,7 +211,7 @@ DESTDIR=$SDK ninja -C build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/foundat
 SDKLIB=$SDK/usr/lib/swift
 
 export LD_LIBRARY_PATH="$B/lib/swift/linux"          # core runtime only (swiftc keeps its own Foundation)
-"$B/bin/swiftc" hello.swift -o hello \
+"$SWIFTC" hello.swift -o hello \
   -sdk "$SWIFT_CORELIBS_SDK" -L "$SWIFT_GCC_LIB" -Xlinker -rpath-link -Xlinker "$SWIFT_GCC_LIB" \
   -L "$B/lib/swift/linux" -Xlinker -rpath-link -Xlinker "$B/lib/swift/linux" \
   -I "$SDKLIB/linux" -I "$SDKLIB" -L "$SDKLIB/linux" \
