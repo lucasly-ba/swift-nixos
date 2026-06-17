@@ -164,7 +164,16 @@ program's rpath instead.
 ## 5. The frontier — how to continue
 
 What works today: **compiler + stdlib + C++ interop + libdispatch + Foundation**, all from
-source, `dobuild.sh` exits 0. Open items, roughly in priority for *contributing*:
+source, `dobuild.sh` exits 0.
+
+**Driving the build.** The build now has two scopes: `./dobuild.sh compiler` (compiler +
+stdlib — the fast loop for `swift/lib` and stdlib work) and `./dobuild.sh foundation` (the
+full toolchain), selected via the matching `nix develop .#compiler` / `nix develop .#full`
+shells. Sanity-check any build with `nix run .#smoke-test`. See the build-target table in
+[`README.md`](./README.md) (§2) for which to pick, and [`VERSIONS.md`](./VERSIONS.md) for the
+(Swift commit + nixpkgs pin) combinations confirmed to build end-to-end.
+
+Open items, roughly in priority for *contributing*:
 
 1. **Run the test suite (`check-swift` / lit).** ***Done — and it works without touching a
    single line of Apple/LLVM source.*** Enable it: flip `dobuild.sh`'s `SWIFT_INCLUDE_TESTS`
@@ -308,7 +317,7 @@ a reviewer cannot tell you used NixOS.
 
 | Topic              | Ubuntu / macOS (supported)                       | NixOS (this recipe)                                          |
 |--------------------|--------------------------------------------------|--------------------------------------------------------------|
-| Build command      | `./swift/utils/build-script` directly            | `nix develop -c bash dobuild.sh` (build-script + NixOS flags)|
+| Build command      | `./swift/utils/build-script` directly            | `nix develop -c bash dobuild.sh foundation` (build-script + NixOS flags)|
 | C/C++ toolchain    | system gcc/glibc in `/usr`; clang finds them     | `/usr` is empty; flake injects glibc/gcc/sysroot (`CCC_OVERRIDE_OPTIONS`, sysroot) |
 | Dynamic linker     | `/lib64/ld-linux` = real glibc                   | `/lib64/ld-linux` = `nix-ld`; we force the nix glibc loader (the executable-test SIGSEGV) |
 | Bootstrap compiler | downloaded Swift snapshot toolchain              | nixpkgs `swift 5.10.1`                                        |
