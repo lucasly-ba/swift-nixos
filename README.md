@@ -170,17 +170,25 @@ bare `sh dobuild.sh` outside the dev shell won't work.)
 
 ## 3. Use the compiler you built
 
+Enter the dev shell and point `$SWIFTC` at the compiler you built:
+
 ```sh
 nix develop
 B=build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64
 SWIFTC="$B/bin/swiftc"
 export LD_LIBRARY_PATH="$B/lib/swift/linux"
+```
 
-# plain Swift, DON'T pass -sdk:
+Plain Swift works directly; do not pass `-sdk`:
+
+```sh
 echo 'print("hello from a swiftc I built")' > hello.swift
 "$SWIFTC" hello.swift -o hello && ./hello
+```
 
-# C++ interop (pass the gcc-toolchain + sysroot so the importer finds libstdc++):
+For C++ interop, pass the gcc-toolchain and sysroot so the importer finds libstdc++:
+
+```sh
 mkdir -p cxxmod
 printf '#pragma once\ninline int cxx_answer() { return 42; }\n' > cxxmod/shim.h
 printf 'module CxxHello { header "shim.h" requires cplusplus }\n' > cxxmod/module.modulemap
@@ -206,16 +214,17 @@ DESTDIR=$SDK ninja -C build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/libdisp
 DESTDIR=$SDK ninja -C build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/foundation-linux-x86_64 install
 SDKLIB=$SDK/usr/lib/swift
 
-export LD_LIBRARY_PATH="$B/lib/swift/linux"          # core runtime only (swiftc keeps its own Foundation)
+export LD_LIBRARY_PATH="$B/lib/swift/linux"
 echo 'import Foundation; print(UUID(), Date(timeIntervalSince1970: 0))' > hello.swift
 "$SWIFTC" hello.swift -o hello \
   -sdk "$SWIFT_CORELIBS_SDK" -L "$SWIFT_GCC_LIB" -Xlinker -rpath-link -Xlinker "$SWIFT_GCC_LIB" \
   -L "$B/lib/swift/linux" -Xlinker -rpath-link -Xlinker "$B/lib/swift/linux" \
   -I "$SDKLIB/linux" -I "$SDKLIB" -L "$SDKLIB/linux" \
   -Xlinker -rpath -Xlinker "$B/lib/swift/linux" -Xlinker -rpath -Xlinker "$SDKLIB/linux"
-# prints e.g.: 9A1CDB09-... 1970-01-01 00:00:00 +0000
 ./hello
 ```
+
+`./hello` prints something like `9A1CDB09-... 1970-01-01 00:00:00 +0000`.
 
 - `LD_LIBRARY_PATH` for the **swiftc invocation** must NOT include the new Foundation:
   `swiftc` (via `libllbuildSwift`) links the *bootstrap* Foundation and the ABIs differ.
