@@ -15,22 +15,28 @@ Swift / LLVM / Foundation source is patched.
 **Foundation**. The built `swiftc` compiles, links, and runs real Swift programs, can
 `import CxxStdlib` and call into C++, and `import Foundation`:
 
+> **Heads up:** a bare `swiftc` on your `PATH` is the **bootstrap** compiler Nix uses to
+> *build* Swift (`Swift version 5.10.1`), not the one you built. The compiler you build
+> lives in the build dir as `$B/bin/swiftc` (`B` is defined in §3). The snippets below use
+> that built compiler — that's the only `swiftc` that reports `6.5-dev`.
+
 ```
-$ swiftc --version
+$ B=build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64
+$ "$B/bin/swiftc" --version
 Swift version 6.5-dev (LLVM …, Swift …)
 
-$ echo 'print((1...5).map{$0*$0})' > hi.swift && swiftc hi.swift -o hi && ./hi
+$ echo 'print((1...5).map{$0*$0})' > hi.swift && "$B/bin/swiftc" hi.swift -o hi && ./hi
 [1, 4, 9, 16, 25]
 
 # C++ interop (needs two -Xcc flags on NixOS — see §3):
-$ swiftc -cxx-interoperability-mode=default \
+$ "$B/bin/swiftc" -cxx-interoperability-mode=default \
     -Xcc --gcc-toolchain=$SWIFT_GCC_TOOLCHAIN -Xcc --sysroot=$SWIFT_GLIBC_SYSROOT \
     -I ./cxxmod main.swift -o demo && ./demo
 hello from C++ std::string
 
 # Foundation (built from source; consume via an installed SDK — see §3):
 $ echo 'import Foundation; print(UUID(), Date(timeIntervalSince1970: 0))' > f.swift
-$ swiftc f.swift -o f <flags, see §3> && ./f
+$ "$B/bin/swiftc" f.swift -o f <flags, see §3> && ./f
 9A1CDB09-… 1970-01-01 00:00:00 +0000
 ```
 
