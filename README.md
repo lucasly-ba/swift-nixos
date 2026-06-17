@@ -207,12 +207,14 @@ DESTDIR=$SDK ninja -C build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/foundat
 SDKLIB=$SDK/usr/lib/swift
 
 export LD_LIBRARY_PATH="$B/lib/swift/linux"          # core runtime only (swiftc keeps its own Foundation)
+echo 'import Foundation; print(UUID(), Date(timeIntervalSince1970: 0))' > hello.swift
 "$SWIFTC" hello.swift -o hello \
   -sdk "$SWIFT_CORELIBS_SDK" -L "$SWIFT_GCC_LIB" -Xlinker -rpath-link -Xlinker "$SWIFT_GCC_LIB" \
   -L "$B/lib/swift/linux" -Xlinker -rpath-link -Xlinker "$B/lib/swift/linux" \
   -I "$SDKLIB/linux" -I "$SDKLIB" -L "$SDKLIB/linux" \
   -Xlinker -rpath -Xlinker "$B/lib/swift/linux" -Xlinker -rpath -Xlinker "$SDKLIB/linux"
-./hello   # import Foundation and Foundation types work
+# prints e.g.: 9A1CDB09-... 1970-01-01 00:00:00 +0000
+./hello
 ```
 
 - `LD_LIBRARY_PATH` for the **swiftc invocation** must NOT include the new Foundation:
