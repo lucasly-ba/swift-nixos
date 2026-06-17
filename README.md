@@ -125,7 +125,7 @@ nix develop --command bash dobuild.sh foundation
 | C++ interop overlay (CxxStdlib)   | `nix develop .#compiler` | `./dobuild.sh compiler`   |
 | Foundation / libdispatch          | `nix develop .#full`     | `./dobuild.sh foundation` |
 
-`./dobuild.sh compiler` skips Foundation and is the faster loop for compiler/stdlib work.
+`./dobuild.sh compiler` skips Foundation and is the faster loop for compiler/stdlib/C++ interop work.
 `./dobuild.sh foundation` builds the whole toolchain (what most people want first). See
 CONTRIBUTING.md for the full edit -> rebuild -> test contributor loop.
 
