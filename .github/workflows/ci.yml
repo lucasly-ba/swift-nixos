@@ -1,0 +1,20 @@
+name: CI
+on:
+  push:
+    branches: [main]
+    paths: [flake.nix, flake.lock, dobuild.sh]
+  pull_request:
+    paths: [flake.nix, flake.lock, dobuild.sh]
+jobs:
+  flake-check:
+    runs-on: ubuntu-latest
+    # NOTE: this only validates flake syntax + that the shells evaluate.
+    # A real toolchain build needs a NixOS self-hosted runner with ~100GB disk.
+    # TODO: add a self-hosted runner job that runs `./dobuild.sh compiler` + `nix run .#smoke-test`.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v14
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - run: nix flake check
+      - run: nix develop .#compiler --command echo "compiler shell ok"
+      - run: nix develop .#full --command echo "full shell ok"
