@@ -168,10 +168,12 @@ bare `sh dobuild.sh` outside the dev shell won't work.)
 
 ## 3. Use the compiler you built
 
-Enter the dev shell and point `$SWIFTC` at the compiler you built:
+Run these **inside the dev shell** (enter it first with `nix develop .#full`, or let the
+`.envrc` from the intro activate it). Pasting `nix develop` together with the lines below
+would not work: it starts a subshell and blocks, so the assignments would not run until you
+exit it. With the dev shell already active, point `$SWIFTC` at the compiler you built:
 
 ```sh
-nix develop
 B=build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64
 SWIFTC="$B/bin/swiftc"
 export LD_LIBRARY_PATH="$B/lib/swift/linux"
