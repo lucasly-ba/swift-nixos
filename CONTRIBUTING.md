@@ -1,13 +1,13 @@
-# Contributing to Swift — from NixOS
+# Contributing to Swift from NixOS
 
 This is a practical, copy-paste guide to **building the Swift compiler from source on NixOS
 and contributing a change upstream to [`swiftlang/swift`](https://github.com/swiftlang/swift)**.
-It assumes the NixOS build recipe in this repo (`flake.nix` + `dobuild.sh`) is already working
-— see [`HACKING.md`](./HACKING.md) for *how* that recipe was built and *why* each piece exists.
+It assumes the NixOS build recipe in this repo (`flake.nix` + `dobuild.sh`) is already working.
+See [`HACKING.md`](./HACKING.md) for *how* that recipe was built and *why* each piece exists.
 
 If you are new to open source: the thing you actually "contribute" is a small change to the
 `swift/` source tree plus a test, sent as a GitHub pull request. Everything NixOS-specific in
-this guide is about *building and testing locally* — it never ends up in your PR. A reviewer
+this guide is about *building and testing locally*; it never ends up in your PR. A reviewer
 cannot tell you built on NixOS.
 
 > **Conventions in this doc**
@@ -80,11 +80,11 @@ clean run exits `0`. It builds: the **compiler**, the **standard library**, **C+
 (`CxxStdlib`), **libdispatch**, and **Foundation**.
 
 If you're only changing the compiler or standard library (not Foundation), `./dobuild.sh
-compiler` skips libdispatch/Foundation for a faster loop — see the build-target table in
+compiler` skips libdispatch/Foundation for a faster loop; see the build-target table in
 [`README.md`](./README.md) (§2) for which shell + command to use.
 
 > **Run only ONE build at a time.** Two `build-script`/`ninja` runs in the same build dir clobber
-> each other. Also watch free space on `/` (the Nix store) — `nix-collect-garbage -d` reclaims it.
+> each other. Also watch free space on `/` (the Nix store); `nix-collect-garbage -d` reclaims it.
 
 Output lands in `$B`. The compiler you just built:
 
@@ -98,7 +98,7 @@ the generated test tree, so build the tests-on variant once:
 
 1. Edit `dobuild.sh`: change `-DSWIFT_INCLUDE_TESTS:BOOL=FALSE` → `TRUE`.
 2. Force a reconfigure: `rm build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64/CMakeCache.txt`
-   *(note: this cascades a ~40 min Foundation rebuild — unavoidable, one-time).*
+   *(note: this cascades a ~40 min Foundation rebuild, unavoidable and one-time).*
 3. Re-run `nix develop --command bash dobuild.sh foundation`.
 
 This generates `$B/swift-linux-x86_64/test-linux-x86_64/`, which mirrors `swift/test/`.
@@ -107,7 +107,7 @@ This generates `$B/swift-linux-x86_64/test-linux-x86_64/`, which mirrors `swift/
 
 ## 3. The edit → build → test loop (incremental)
 
-This is your day-to-day cycle. **You do not rebuild from scratch** — `ninja` recompiles only
+This is your day-to-day cycle. **You do not rebuild from scratch**: `ninja` recompiles only
 what changed (and `sccache` caches object files across rebuilds, so a one-file change is often
 under a minute).
 
@@ -115,7 +115,7 @@ under a minute).
 Improve a diagnostic's wording. We changed the "assignment in a condition" error from
 `a boolean context` to `a Boolean context` (matching Swift's prose convention):
 
-**1. Edit the compiler** — `swift/include/swift/AST/DiagnosticsSema.def`:
+**1. Edit the compiler** in `swift/include/swift/AST/DiagnosticsSema.def`:
 ```diff
  ERROR(use_of_equal_instead_of_equality,none,
 -      "use of '=' in a boolean context, did you mean '=='?", ())
@@ -144,7 +144,7 @@ nix develop -c $B/llvm-linux-x86_64/bin/llvm-lit -s \
 # -> Passed: 2 (100.00%)
 ```
 
-If you mismatch the message and the test, the test **fails** (`expected-error` not found) — that
+If you mismatch the message and the test, the test **fails** (`expected-error` not found). That
 is the test doing its job. That round-trip *is* the contributor loop.
 
 ### Which ninja target to rebuild
@@ -174,9 +174,9 @@ nix develop -c $LIT -j8 $T/Parse $T/Sema                  # parallel, multiple s
 ```
 
 **Test categories:**
-- **Non-executable** (typecheck / parse / SIL / `-verify`) — the bulk of compiler & stdlib work.
+- **Non-executable** (typecheck / parse / SIL / `-verify`): the bulk of compiler & stdlib work.
   These all pass on NixOS out of the box.
-- **Executable** (build + *run* a binary, often `import StdlibUnittest`) — these pass on NixOS too,
+- **Executable** (build + *run* a binary, often `import StdlibUnittest`): these pass on NixOS too,
   thanks to `SWIFT_DRIVER_TEST_OPTIONS` exported by the flake (see `HACKING.md` §5). You don't set
   anything; the dev shell already has it.
 
@@ -231,7 +231,7 @@ the `README`/`HACKING.md` notes on the corelibs flags.
 ## 7. Submitting a pull request to `swiftlang/swift`
 
 The code change lives in the `swift/` subdirectory (that's the `swiftlang/swift` repo). Your PR
-only ever contains changes to *that* repo — never `flake.nix`, `dobuild.sh`, or anything NixOS.
+only ever contains changes to *that* repo, never `flake.nix`, `dobuild.sh`, or anything NixOS.
 
 ### 7a. Branch, commit, push
 ```bash
@@ -250,14 +250,14 @@ git -C swift push fork improve-equal-diagnostic               # push to YOUR for
   `[Sema] Capitalize "Boolean" in the assignment-in-condition diagnostic`.
 - Body: the full reasoning. Link the issue you're fixing (`Fixes #NNNNN`).
 - New source files need the Swift.org Apache-2.0 copyright header (copy it from a neighboring file).
-- **Note for this repo:** commits here are authored by your own git identity — no Co-Authored-By
+- **Note for this repo:** commits here are authored by your own git identity, with no Co-Authored-By
   trailers.
 
 ### 7c. Open the PR
 GitHub will show a "Compare & pull request" banner after you push. Open it against
 `swiftlang/swift` `main`. Fill in what changed and why; link the issue.
 
-### 7d. CI — how it actually runs
+### 7d. CI: how it actually runs
 - Swift's CI runs on **Apple's infrastructure (Ubuntu + macOS)**, *not* your machine. Your local
   NixOS quirks are invisible to it.
 - CI is triggered by a comment from someone with commit access:
@@ -271,11 +271,11 @@ GitHub will show a "Compare & pull request" banner after you push. Open it again
   | `@swift-ci Please clean test`                  | Full, non-incremental (workspace wiped)   |
 
 - **As a newcomer you usually can't self-trigger** `@swift-ci` (it needs commit access). Your
-  reviewer/maintainer comments it for you. That's normal — just ping politely if your PR sits.
+  reviewer/maintainer comments it for you. That's normal; just ping politely if your PR sits.
 - Commit access itself is granted after ~5 non-trivial merged PRs (email code-owners@forums.swift.org).
 
 ### 7e. Review
-Iterate on feedback; don't assume silent approval — wait for an explicit ✅. Ping non-urgent PRs
+Iterate on feedback; don't assume silent approval. Wait for an explicit ✅. Ping non-urgent PRs
 about weekly. Reviewing others' PRs builds goodwill.
 
 ### Where to find work
@@ -288,28 +288,28 @@ about weekly. Reviewing others' PRs builds goodwill.
 
 ## 8. NixOS specifics & gotchas (things Ubuntu/macOS users never hit)
 
-- **One build at a time** in `$B` — concurrent `ninja`/`build-script` runs corrupt the build dir.
+- **One build at a time** in `$B`: concurrent `ninja`/`build-script` runs corrupt the build dir.
 - **Watch `/` (the Nix store), not just `/home`.** Each `nix develop` and the build consume store
   space; `/` filling to 100% looks like random errors. `nix-collect-garbage -d` frees it.
 - **Editing `flake.nix`** requires re-entering the shell (`direnv reload`, or a fresh `nix develop`).
 - **The bare build-clang** (`$B/llvm-linux-x86_64/bin/clang`) has no NixOS toolchain knowledge; the
   flake feeds it crt/gcc/glibc via `CCC_OVERRIDE_OPTIONS` and the test harness via
-  `SWIFT_DRIVER_TEST_OPTIONS`. You normally don't touch these — but if you build/link by hand and
+  `SWIFT_DRIVER_TEST_OPTIONS`. You normally don't touch these, but if you build/link by hand and
   get `cannot find Scrt1.o` or a startup `SIGSEGV`, that's the missing toolchain/dynamic-linker
   wiring (HACKING.md §5 explains it in full).
 - **`import Foundation` / C++ interop** at the command line need the corelibs flags (`-sdk`,
-  `-Xcc --gcc-toolchain`, rpath-link) — see `README`/`HACKING.md`. Plain Swift needs none of this.
+  `-Xcc --gcc-toolchain`, rpath-link); see `README`/`HACKING.md`. Plain Swift needs none of this.
 
 ---
 
-## 9. You vs. someone on Ubuntu/macOS — what's different, what isn't
+## 9. You vs. someone on Ubuntu/macOS: what's different, what isn't
 
 **Identical (the part that matters for contributing):**
 - The `swift/` source, the git history, the branch/commit/PR mechanics, the test files and how you
   run `llvm-lit`, the diagnostics, the SIL, the behavior of the compiler you build.
 - The PR you open and the CI that judges it. **CI never runs on your machine** (yours or an Ubuntu
-  user's) — it runs on Apple's Ubuntu+macOS fleet. Your reviewer can't tell which distro you used.
-- The "local green is necessary, not sufficient — trust CI" rule applies to everyone.
+  user's); it runs on Apple's Ubuntu+macOS fleet. Your reviewer can't tell which distro you used.
+- The "local green is necessary, not sufficient; trust CI" rule applies to everyone.
 
 **Different (all of it about *local build/test plumbing*, none of it in your PR):**
 | Topic                | Ubuntu / macOS (supported)                          | NixOS (this repo)                                        |
@@ -320,11 +320,11 @@ about weekly. Reviewing others' PRs builds goodwill.
 | Bootstrap compiler   | downloaded Swift snapshot toolchain                 | nixpkgs `swift 5.10.1`                                    |
 | Dependencies         | `apt`/Homebrew packages                             | pinned in `flake.nix` (reproducible)                     |
 | Test suite           | executable tests pass as-is                         | pass via `SWIFT_DRIVER_TEST_OPTIONS`; 3 niche tests still fail (LTO + 2 C-interop, HACKING.md §5) |
-| Support status       | officially supported, CI-covered                    | **not** an official platform — local-only failures can be environment, not your code |
+| Support status       | officially supported, CI-covered                    | **not** an official platform; local-only failures can be environment, not your code |
 
 **The one practical asymmetry:** because NixOS isn't a CI platform, occasionally CI may flag
 something you can't reproduce locally (e.g. one of the 3 unsupported-test categories). When that
-happens, reason from the CI logs rather than local repro. It's a minor tax, not a blocker — and for
+happens, reason from the CI logs rather than local repro. It's a minor tax, not a blocker, and for
 the vast majority of compiler/stdlib work (diagnostics, parser/sema, stdlib additions) you have a
 faithful, fast local loop that's at parity with an Ubuntu contributor.
 
