@@ -4,12 +4,8 @@
 from NixOS.** The official `build-script` doesn't build on NixOS; this makes the full
 from-source contributor loop (build, test, send a PR) work.
 
-A Nix dev shell (`flake.nix`) + build script (`dobuild.sh`) that build the **Swift toolchain
-from source on NixOS**. That's the compiler, the standard library, the C++ interop overlay
-(`CxxStdlib`), libdispatch, and Foundation. The stock `swift/utils/build-script`
-builds none of these on NixOS out of the box, because NixOS has no `/usr/include`, `/usr/lib/gcc`, bare
-`libcurses.so`, etc. All the NixOS-specific workarounds live in `flake.nix` + `dobuild.sh`; no
-Swift / LLVM / Foundation source is patched.
+Two files: `flake.nix` (the dev shell) and `dobuild.sh` (the build script). No Swift /
+LLVM / Foundation source is patched.
 
 **Status: it works**, including the **C++ interoperability overlay (`CxxStdlib`)** and
 **Foundation**. The built `swiftc` compiles, links, and runs real Swift programs, can
