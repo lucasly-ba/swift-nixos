@@ -33,16 +33,12 @@ Swift version 6.5-dev (LLVM …, Swift …)
 $ echo 'print((1...5).map{$0*$0})' > hi.swift && "$SWIFTC" hi.swift -o hi && ./hi
 [1, 4, 9, 16, 25]
 
-# C++ interop (needs two -Xcc flags on NixOS; see §3):
-$ "$SWIFTC" -cxx-interoperability-mode=default \
-    -Xcc --gcc-toolchain=$SWIFT_GCC_TOOLCHAIN -Xcc --sysroot=$SWIFT_GLIBC_SYSROOT \
-    -I ./cxxmod main.swift -o demo && ./demo
+# C++ interop: the verified self-contained example is in the smoke-test.
+# Run it with: nix run .#smoke-test
 hello from C++ std::string
 
-# Foundation (built from source; consume via an installed SDK; see §3):
-$ echo 'import Foundation; print(UUID(), Date(timeIntervalSince1970: 0))' > f.swift
-$ "$SWIFTC" f.swift -o f  # plus the corelibs flags from §3
-$ ./f
+# Foundation: needs corelibs flags; see §3 for the full invocation.
+# Quick check: nix run .#smoke-test
 9A1CDB09-… 1970-01-01 00:00:00 +0000
 ```
 
