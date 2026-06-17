@@ -78,8 +78,7 @@ git clone https://github.com/swiftlang/swift.git
 nix develop --command swift/utils/update-checkout --clone
 ```
 
-Run `update-checkout` through `nix develop` so the flake's `python3` is on PATH (NixOS has
-none, so running it directly gives `env: 'python3': No such file or directory`). Layout:
+Run `update-checkout` through `nix develop` so the flake's `python3` is on PATH. Layout:
 
 ```
 swift-workspace/        ← this repo (swift-nixos), cloned
