@@ -33,14 +33,12 @@ Swift version 6.5-dev (LLVM …, Swift …)
 $ echo 'print((1...5).map{$0*$0})' > hi.swift && "$SWIFTC" hi.swift -o hi && ./hi
 [1, 4, 9, 16, 25]
 
-# C++ interop: the verified self-contained example is in the smoke-test.
-# Run it with: nix run .#smoke-test
 hello from C++ std::string
-
-# Foundation: needs corelibs flags; see §3 for the full invocation.
-# Quick check: nix run .#smoke-test
 9A1CDB09-… 1970-01-01 00:00:00 +0000
 ```
+
+C++ interop and Foundation each need their own flags; see §3, or run `nix run .#smoke-test`
+to verify all three at once.
 
 **Run only one build at a time:** overlapping `build-script` runs share the same `build/`
 dir and corrupt each other.
