@@ -181,6 +181,10 @@ echo 'print("hello from a swiftc I built")' > hello.swift
 "$SWIFTC" hello.swift -o hello && ./hello
 
 # C++ interop (pass the gcc-toolchain + sysroot so the importer finds libstdc++):
+mkdir -p cxxmod
+printf '#pragma once\ninline int cxx_answer() { return 42; }\n' > cxxmod/shim.h
+printf 'module CxxHello { header "shim.h" requires cplusplus }\n' > cxxmod/module.modulemap
+printf 'import CxxHello\nprint(cxx_answer())\n' > main.swift
 "$SWIFTC" -cxx-interoperability-mode=default \
   -Xcc --gcc-toolchain="$SWIFT_GCC_TOOLCHAIN" -Xcc --sysroot="$SWIFT_GLIBC_SYSROOT" \
   -I ./cxxmod main.swift -o demo && ./demo
