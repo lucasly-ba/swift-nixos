@@ -1,10 +1,15 @@
 # Build Swift from source on NixOS (compiler + C++ interop + Foundation)
 
-A Nix dev shell (`flake.nix`) + build script (`dobuild.sh`) that build the **Swift
-compiler, standard library, C++ interop overlay, libdispatch and Foundation from source on
-NixOS** — which the stock `swift/utils/build-script` cannot do out of the box, because
-NixOS has no `/usr/include`, `/usr/lib/gcc`, bare `libcurses.so`, etc. All the NixOS-specific
-workarounds live in `flake.nix` + `dobuild.sh` (no Swift/LLVM/Foundation source is patched).
+**The entry point for contributing to [`swiftlang/swift`](https://github.com/swiftlang/swift)
+from NixOS.** The official `build-script` doesn't build on NixOS; this makes the full
+from-source contributor loop — build, test, send a PR — work.
+
+A Nix dev shell (`flake.nix`) + build script (`dobuild.sh`) that build the **Swift toolchain
+from source on NixOS**. That's the compiler, the standard library, the C++ interop overlay
+(`CxxStdlib`), libdispatch, and Foundation — none of which the stock `swift/utils/build-script`
+builds on NixOS out of the box, because NixOS has no `/usr/include`, `/usr/lib/gcc`, bare
+`libcurses.so`, etc. All the NixOS-specific workarounds live in `flake.nix` + `dobuild.sh`; no
+Swift / LLVM / Foundation source is patched.
 
 **Status: it works**, including the **C++ interoperability overlay (`CxxStdlib`)** and
 **Foundation**. The built `swiftc` compiles, links, and runs real Swift programs, can
@@ -37,6 +42,14 @@ corrupt each other.
 
 > This repo is **only the recipe** (flake + script + notes). You fetch Apple's Swift
 > source yourself (next section).
+
+### Where to go next
+
+- **README** (this file) — reproduce the working build.
+- **[CONTRIBUTING.md](./CONTRIBUTING.md)** — the edit → build → test → PR loop for contributing
+  to `swiftlang/swift`.
+- **[HACKING.md](./HACKING.md)** — why NixOS fights a from-source build, the five fix
+  categories, and the Foundation gdb debugging story.
 
 ---
 
@@ -92,12 +105,12 @@ nix develop --command bash dobuild.sh foundation
 
 ### Pick the build that matches what you want to work on
 
-| I want to contribute to...        | Dev shell           | Build command               |
-| --------------------------------- | ------------------- | --------------------------- |
-| Compiler (Sema, SIL, diagnostics) | nix develop .#compiler | ./dobuild.sh compiler   |
-| Standard library                  | nix develop .#compiler | ./dobuild.sh compiler   |
-| Foundation / libdispatch          | nix develop .#full     | ./dobuild.sh foundation |
-| C++ interop overlay               | nix develop .#full     | ./dobuild.sh foundation |
+| I want to contribute to...        | Dev shell                | Build command             |
+| --------------------------------- | ------------------------ | ------------------------- |
+| Compiler (Sema, SIL, diagnostics) | `nix develop .#compiler` | `./dobuild.sh compiler`   |
+| Standard library                  | `nix develop .#compiler` | `./dobuild.sh compiler`   |
+| Foundation / libdispatch          | `nix develop .#full`     | `./dobuild.sh foundation` |
+| C++ interop overlay               | `nix develop .#full`     | `./dobuild.sh foundation` |
 
 `./dobuild.sh compiler` skips Foundation and is the faster loop for compiler/stdlib work.
 `./dobuild.sh foundation` builds the whole toolchain (what most people want first). See
@@ -105,37 +118,15 @@ CONTRIBUTING.md for the full edit -> rebuild -> test contributor loop.
 
 After a build, sanity-check it with: `nix run .#smoke-test`
 
-`dobuild.sh` runs `utils/build-script` with NixOS-specific options that **must** go on the
-build-script command line (the `EXTRA_CMAKE_OPTIONS` env var only reaches LLVM's CMake,
-not Swift's):
+`dobuild.sh foundation` wraps `swift/utils/build-script` with the NixOS-specific options the
+flake can't deliver any other way — a glibc `-sdk` sysroot for the stdlib's clang-importer, an
+`-Xcc --gcc-toolchain` so the C++ interop overlay finds libstdc++, and the corelibs `-sdk` /
+link flags that let Foundation build. These **must** go on the build-script command line (the
+`EXTRA_CMAKE_OPTIONS` env var only reaches LLVM's CMake, not Swift's). `./dobuild.sh compiler`
+is the same minus the libdispatch/Foundation flags.
 
-```sh
-utils/build-script --release-debuginfo --debug-swift --sccache \
-  --libdispatch=1 --foundation=1 \
-  "--common-swift-flags=-sil-verify-none -sdk $SWIFT_CORELIBS_SDK -L $SWIFT_GCC_LIB -Xlinker -rpath-link -Xlinker $SWIFT_GCC_LIB -L $SWIFT_RUNTIME_LIB -Xlinker -rpath-link -Xlinker $SWIFT_RUNTIME_LIB" \
-  "--extra-cmake-options=-DLLVM_PARALLEL_LINK_JOBS=1" \
-  "--extra-cmake-options=-DSWIFT_SDK_LINUX_ARCH_x86_64_PATH=$SWIFT_GLIBC_SYSROOT" \
-  "--extra-cmake-options=-DSWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=$SWIFT_GCC_TOOLCHAIN;-no-verify-emitted-module-interface'" \
-  "--extra-cmake-options=-DSWIFT_SDK_LINUX_CXX_OVERLAY_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=$SWIFT_GCC_TOOLCHAIN'" \
-  "--extra-cmake-options=-DSWIFT_INCLUDE_TESTS:BOOL=FALSE"
-```
-
-The `--extra-cmake-options` (semicolon-separated CMake lists, single-quoted to survive
-`build-script-impl`'s `eval`) configure the **stdlib + C++ overlay**; the
-`--common-swift-flags` value configures the **corelibs (libdispatch/Foundation) only** —
-see *Building Foundation* below for why each flag is there. The flake's `shellHook` exports
-the paths these reference:
-
-- `$SWIFT_GLIBC_SYSROOT` — a glibc sysroot the stdlib's clang-importer needs to find libc.
-- `$SWIFT_GCC_TOOLCHAIN` — the nix gcc prefix (libstdc++ headers + gcc install dir), which
-  delivers C++ stdlib for the interop overlay.
-- `$SWIFT_CORELIBS_SDK` — an *augmented* sysroot (glibc + the just-built Swift runtime) for
-  the Foundation build; `$SWIFT_GCC_LIB` / `$SWIFT_RUNTIME_LIB` — gcc-lib / core-runtime
-  dirs for the corelibs' indirect-dependency link resolution.
-
-The CMake-list values use `;` separators and are **single-quoted** so the `;` survives
-`build-script-impl`'s internal `eval` — which is why the build command lives in a script
-file rather than being typed inline.
+For the full per-flag rationale, see [HACKING.md](./HACKING.md) (§1, *The build command, flag by
+flag*) or the header comment in `dobuild.sh`.
 
 **After editing `flake.nix`** in a way that affects the swift build (e.g. the sysroot),
 force a reconfigure (the relevant flags are baked into `build.ninja`):

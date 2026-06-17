@@ -72,6 +72,43 @@ is an instance of one:
 
 If you hit a new wall, first ask: *which of these five is it?* That usually points at the fix.
 
+### The build command, flag by flag
+
+`./dobuild.sh foundation` runs `utils/build-script` with NixOS-specific options that **must**
+go on the build-script command line (the `EXTRA_CMAKE_OPTIONS` env var only reaches LLVM's
+CMake, not Swift's):
+
+```sh
+utils/build-script --release-debuginfo --debug-swift --sccache \
+  --libdispatch=1 --foundation=1 \
+  "--common-swift-flags=-sil-verify-none -sdk $SWIFT_CORELIBS_SDK -L $SWIFT_GCC_LIB -Xlinker -rpath-link -Xlinker $SWIFT_GCC_LIB -L $SWIFT_RUNTIME_LIB -Xlinker -rpath-link -Xlinker $SWIFT_RUNTIME_LIB" \
+  "--extra-cmake-options=-DLLVM_PARALLEL_LINK_JOBS=1" \
+  "--extra-cmake-options=-DSWIFT_SDK_LINUX_ARCH_x86_64_PATH=$SWIFT_GLIBC_SYSROOT" \
+  "--extra-cmake-options=-DSWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=$SWIFT_GCC_TOOLCHAIN;-no-verify-emitted-module-interface'" \
+  "--extra-cmake-options=-DSWIFT_SDK_LINUX_CXX_OVERLAY_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=$SWIFT_GCC_TOOLCHAIN'" \
+  "--extra-cmake-options=-DSWIFT_INCLUDE_TESTS:BOOL=FALSE"
+```
+
+(`./dobuild.sh compiler` is the same without `--libdispatch=1 --foundation=1` and the
+`--common-swift-flags` corelibs block.)
+
+The `--extra-cmake-options` (semicolon-separated CMake lists, single-quoted to survive
+`build-script-impl`'s `eval`) configure the **stdlib + C++ overlay**; the `--common-swift-flags`
+value configures the **corelibs (libdispatch/Foundation) only** — see §3 for why each flag is
+there. The flake's `shellHook` exports the paths these reference:
+
+- `$SWIFT_GLIBC_SYSROOT` — a glibc sysroot the stdlib's clang-importer needs to find libc.
+- `$SWIFT_GCC_TOOLCHAIN` — the nix gcc prefix (libstdc++ headers + gcc install dir), which
+  delivers C++ stdlib for the interop overlay.
+- `$SWIFT_CORELIBS_SDK` — an *augmented* sysroot (glibc + the just-built Swift runtime) for
+  the Foundation build; `$SWIFT_GCC_LIB` / `$SWIFT_RUNTIME_LIB` — gcc-lib / core-runtime
+  dirs for the corelibs' indirect-dependency link resolution.
+
+The CMake-list values use `;` separators and are **single-quoted** so the `;` survives
+`build-script-impl`'s internal `eval` — which is why the build command lives in a script file
+rather than being typed inline. The authoritative per-flag rationale is the header comment in
+`dobuild.sh`.
+
 ---
 
 ## 2. The journey (the walls, in order)
