@@ -41,15 +41,13 @@ hello from C++ std::string
 
 # Foundation (built from source; consume via an installed SDK; see §3):
 $ echo 'import Foundation; print(UUID(), Date(timeIntervalSince1970: 0))' > f.swift
-$ "$SWIFTC" f.swift -o f <flags, see §3> && ./f
+$ "$SWIFTC" f.swift -o f  # plus the corelibs flags from §3
+$ ./f
 9A1CDB09-… 1970-01-01 00:00:00 +0000
 ```
 
-A clean single `dobuild.sh` run completes with **exit 0 (0 failures)** including Foundation.
-The build-system root cause behind the Foundation "hang" (traced with gdb) is documented at
-the bottom. **Run only one build at a time:** overlapping `build-script` runs share the
-same `build/` dir and
-corrupt each other.
+**Run only one build at a time:** overlapping `build-script` runs share the same `build/`
+dir and corrupt each other.
 
 > This repo is **only the recipe** (flake + script + notes). You fetch Apple's Swift
 > source yourself (next section).
