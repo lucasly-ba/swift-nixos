@@ -71,13 +71,17 @@ You now have two remotes in `swift/`: `origin` (the real Swift repo, read-only f
 
 ```bash
 cd ~/afs/swift
-nix develop --command bash dobuild.sh 2>&1 | tee /tmp/swift-build.log
+nix develop --command bash dobuild.sh foundation 2>&1 | tee /tmp/swift-build.log
 ```
 
 `dobuild.sh` wraps `swift/utils/build-script` with the NixOS-specific flags the flake can't
 deliver any other way (glibc sysroot, gcc-toolchain for C++ interop, corelibs link flags). A
 clean run exits `0`. It builds: the **compiler**, the **standard library**, **C++ interop**
 (`CxxStdlib`), **libdispatch**, and **Foundation**.
+
+If you're only changing the compiler or standard library (not Foundation), `./dobuild.sh
+compiler` skips libdispatch/Foundation for a faster loop — see the build-target table in
+[`README.md`](./README.md) (§2) for which shell + command to use.
 
 > **Run only ONE build at a time.** Two `build-script`/`ninja` runs in the same build dir clobber
 > each other. Also watch free space on `/` (the Nix store) — `nix-collect-garbage -d` reclaims it.
@@ -95,7 +99,7 @@ the generated test tree, so build the tests-on variant once:
 1. Edit `dobuild.sh`: change `-DSWIFT_INCLUDE_TESTS:BOOL=FALSE` → `TRUE`.
 2. Force a reconfigure: `rm build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64/CMakeCache.txt`
    *(note: this cascades a ~40 min Foundation rebuild — unavoidable, one-time).*
-3. Re-run `nix develop --command bash dobuild.sh`.
+3. Re-run `nix develop --command bash dobuild.sh foundation`.
 
 This generates `$B/swift-linux-x86_64/test-linux-x86_64/`, which mirrors `swift/test/`.
 
@@ -148,7 +152,7 @@ is the test doing its job. That round-trip *is* the contributor loop.
 |---------------------------------------|-------------------------------------------------|
 | Compiler (`swift/lib/**`, `*.def`)    | `bin/swift-frontend`                             |
 | Standard library (`stdlib/public/core/**`) | `swiftCore-linux-x86_64` (or `libswiftCore.so`) |
-| Everything / unsure                   | re-run `dobuild.sh` (full, slow but always correct) |
+| Everything / unsure                   | re-run `dobuild.sh foundation` (full, slow but always correct) |
 
 All targets: `nix develop -c ninja -C $B/swift-linux-x86_64 -t targets`.
 

@@ -87,8 +87,23 @@ Cheap insurance: when a build comes up clean, note the `swift/` commit hash
 From `swift-workspace/`:
 
 ```sh
-nix develop --command bash dobuild.sh
+nix develop --command bash dobuild.sh foundation
 ```
+
+### Pick the build that matches what you want to work on
+
+| I want to contribute to...        | Dev shell           | Build command               |
+| --------------------------------- | ------------------- | --------------------------- |
+| Compiler (Sema, SIL, diagnostics) | nix develop .#compiler | ./dobuild.sh compiler   |
+| Standard library                  | nix develop .#compiler | ./dobuild.sh compiler   |
+| Foundation / libdispatch          | nix develop .#full     | ./dobuild.sh foundation |
+| C++ interop overlay               | nix develop .#full     | ./dobuild.sh foundation |
+
+`./dobuild.sh compiler` skips Foundation and is the faster loop for compiler/stdlib work.
+`./dobuild.sh foundation` builds the whole toolchain (what most people want first). See
+CONTRIBUTING.md for the full edit -> rebuild -> test contributor loop.
+
+After a build, sanity-check it with: `nix run .#smoke-test`
 
 `dobuild.sh` runs `utils/build-script` with NixOS-specific options that **must** go on the
 build-script command line (the `EXTRA_CMAKE_OPTIONS` env var only reaches LLVM's CMake,
@@ -150,7 +165,7 @@ Rule of thumb: ~12 GB RAM needs `LLVM_PARALLEL_LINK_JOBS=1` **and** swap; with �
 can raise it to 2–4 to link faster. Confirm a kill with
 `journalctl -k -b | grep -i 'oom\|killed process'`.
 
-**Resuming after a crash:** just re-run `nix develop --command bash dobuild.sh`. The build is
+**Resuming after a crash:** just re-run `nix develop --command bash dobuild.sh foundation`. The build is
 incremental (ninja + `--sccache`), so it picks up from the killed step instead of starting
 over — don't delete `build/`. (Run it through `nix develop` so the toolchain env is set; a
 bare `sh dobuild.sh` outside the dev shell won't work.)
