@@ -212,7 +212,7 @@ export LD_LIBRARY_PATH="$B/lib/swift/linux"          # core runtime only (swiftc
   -L "$B/lib/swift/linux" -Xlinker -rpath-link -Xlinker "$B/lib/swift/linux" \
   -I "$SDKLIB/linux" -I "$SDKLIB" -L "$SDKLIB/linux" \
   -Xlinker -rpath -Xlinker "$B/lib/swift/linux" -Xlinker -rpath -Xlinker "$SDKLIB/linux"
-./hello   # e.g.  import Foundation; print(UUID(), JSONSerialization…) works
+./hello   # import Foundation and Foundation types work
 ```
 
 - `LD_LIBRARY_PATH` for the **swiftc invocation** must NOT include the new Foundation:
