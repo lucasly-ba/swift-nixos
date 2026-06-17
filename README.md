@@ -22,6 +22,8 @@ LLVM / Foundation source is patched.
 so it points the variable straight at the swift tree. `CONTRIBUTING.md` anchors `$B` one level up
 at the build dir instead, because its test commands also reach the sibling LLVM tree.
 
+> The snippets below run inside the dev shell. Either run `nix develop .#full` first, or add a `.envrc` containing `use flake .#full` so direnv activates it automatically when you `cd` into the workspace.
+
 ```
 $ B=build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64
 $ SWIFTC="$B/bin/swiftc"
