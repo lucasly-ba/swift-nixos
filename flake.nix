@@ -60,7 +60,7 @@
         # A minimal Linux sysroot (usr/include -> glibc headers, usr/lib -> glibc
         # libs) for the just-built stdlib swiftc.  Swift's ClangImporter detects
         # the target libc by asking the clang TOOLCHAIN for its system include
-        # paths (sysroot-based) and checking for inttypes.h/unistd.h/stdint.h — it
+        # paths (sysroot-based) and checking for inttypes.h/unistd.h/stdint.h; it
         # does NOT consult -Xcc -idirafter.  With the build's `-sdk /`, SysRoot=/,
         # and NixOS has no /usr/include -> "libc not found" -> SwiftGlibc/Glibc
         # overlay fails.  Passing `-Xcc --sysroot=${swiftSysroot}` (which takes
@@ -69,7 +69,7 @@
         # Sysroot is ENRICHED with the gcc toolchain too (c++ headers + gcc install
         # dir), so clang's GCC-under-sysroot detection finds BOTH glibc (libc, for the
         # Glibc overlay) AND libstdc++ (for the CxxStdlib C++ overlay) purely via
-        # `-sdk ${swiftSysroot}` — no -Xcc --gcc-toolchain needed.  Crucially `-sdk`
+        # `-sdk ${swiftSysroot}`, with no -Xcc --gcc-toolchain needed.  Crucially `-sdk`
         # IS recorded in the emitted .swiftinterface, so the verify-emitted-module-
         # interface recompile also finds the modules (a bare --gcc-toolchain is NOT
         # recorded and fails verification).  Verified: CxxStdlib emit-module builds
@@ -86,10 +86,10 @@
         # satisfies BOTH the overlay compile (libstdc++ found) and the link.
         # GLIBC-ONLY sysroot (headers + libs), used as the stdlib swiftc's `-sdk`.
         # It deliberately does NOT contain gcc's c++ headers.  C++ interop is enabled,
-        # but libstdc++ is delivered to swiftc a different way — via `-Xcc
+        # but libstdc++ is delivered to swiftc a different way: via `-Xcc
         # --gcc-toolchain=<nix-gcc>` (see dobuild.sh: SWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS
         # + the Cxx overlay flags).  This is REQUIRED for correctness: if the sysroot
-        # ALSO carried c++ headers, libstdc++ would be reachable via TWO paths — the
+        # ALSO carried c++ headers, libstdc++ would be reachable via TWO paths: the
         # sysroot path (where Swift's ClangImporter injects the `std` clang modulemap)
         # and the real <nix-gcc> path (where textual #includes + the gcc-toolchain
         # resolve).  clang then sees bits/stl_pair.h, parse_numbers.h, … under two file
@@ -105,7 +105,7 @@
         # a stdlib C++ shared lib (e.g. libswiftRemoteMirror.so) with -sdk (= --sysroot),
         # GNU ld PREFIXES the sysroot onto them -> tries to open
         # <sysroot>/nix/store/<glibc>/lib/libc.so.6 (absent) -> "ld.gold: error: cannot
-        # open .../libc.so.6".  FIX (verified in isolation): a SYMLINK FARM — mirror the
+        # open .../libc.so.6".  FIX (verified in isolation): a SYMLINK FARM that mirrors the
         # glibc store dir UNDER the sysroot at its own absolute path, so the prefixed
         # path resolves.  Keeps the original scripts (compile OK) AND makes the link
         # resolve (link OK) without rewriting them.
@@ -116,7 +116,7 @@
           # Symlink farm: make ld's sysroot-prefixed absolute GROUP paths resolve.
           ln -s ${pkgs.glibc} $out/nix/store/$(basename ${pkgs.glibc})
         '';
-        # Shared package set — every "real" dev shell (full, compiler) uses this
+        # Shared package set: every "real" dev shell (full, compiler) uses this
         # exact list; the stub shells (sourcekit, swiftpm) don't need a toolchain.
         commonPackages = with pkgs; [
             # Build system
@@ -179,11 +179,11 @@
 
         # --- shellHook, split into composable parts --------------------------
         # baseHook       : the toolchain wiring every build needs (the 5 NixOS
-        #                  fixes from HACKING.md §1) — used by BOTH full & compiler.
+        #                  fixes from HACKING.md §1), used by BOTH full & compiler.
         # foundationHook : the augmented corelibs sysroot ($SWIFT_CORELIBS_SDK /
-        #                  $SWIFT_GCC_LIB / $SWIFT_RUNTIME_LIB) — needed ONLY to
+        #                  $SWIFT_GCC_LIB / $SWIFT_RUNTIME_LIB), needed ONLY to
         #                  build Foundation, so it's added to the full shell only.
-        # testHook       : SWIFT_DRIVER_TEST_OPTIONS for the lit suite — both.
+        # testHook       : SWIFT_DRIVER_TEST_OPTIONS for the lit suite (both).
         baseHook = ''
             export SWIFT_SOURCE_ROOT="$(pwd)"
             export SWIFT_BUILD_ROOT="$(pwd)/build"
@@ -195,7 +195,7 @@
 
             # Build with clang, not the gcc stdenv default.  llbuild (built by
             # swift-driver's helper via CMake) uses the environment CC/CXX, and the
-            # mkShell gcc stdenv defaults them to gcc/g++ — which chokes on llbuild's
+            # mkShell gcc stdenv defaults them to gcc/g++, which chokes on llbuild's
             # clang-only warning flags (-Wbool-conversion, -Wdocumentation, …).
             # Force clang so llbuild (and anything else honouring CC/CXX) matches the
             # rest of the toolchain.  (cmark/llvm/swift set CMAKE_*_COMPILER
@@ -221,7 +221,7 @@
             # Two different compilers need glibc headers and neither finds them by
             # default; CPATH must stay unset because it breaks C++ #include_next.
             # CPLUS_INCLUDE_PATH must ALSO stay unset: we no longer set it (libstdc++
-            # comes via --gcc-install-dir, glibc via -idirafter — see 1b/1d), but an
+            # comes via --gcc-install-dir, glibc via -idirafter; see 1b/1d), but an
             # inherited value (e.g. direnv re-entry, or a nested `nix develop`) would
             # otherwise leak gcc's include/c++/<ver> into compiler-rt's -nostdinc++
             # TUs and resurrect the gcc-15 "redefinition of 'array'" build failure.
@@ -299,7 +299,7 @@
             #    compiles cleanly.  So we add NOTHING to NIX_CFLAGS_COMPILE here.
 
             # On NixOS, 32-bit system headers are not at standard paths; skip i386
-            # builtins entirely — not needed for Swift development on x86_64.
+            # builtins entirely (not needed for Swift development on x86_64).
             # BUILTINS_CMAKE_ARGS is forwarded directly into the builtins ExternalProject.
             #
             # Glibc-sysroot for the stdlib overlays: the just-built (unwrapped) swiftc
@@ -311,7 +311,7 @@
             # ClangImporter SysRoot=swiftSysroot -> usr/include (glibc) -> libc found
             # (verified: replaying Glibc.o with -sdk ${swiftSysroot} builds it).
             # IMPORTANT: EXTRA_CMAKE_OPTIONS only reaches the LLVM/builtins cmake, NOT the
-            # swift compiler's cmake (verified) — so the BUILTINS fix below works, but the
+            # swift compiler's cmake (verified), so the BUILTINS fix below works, but the
             # SDK-path -D must be passed on the build-script COMMAND LINE instead (which
             # does reach swift cmake, and sticks because SwiftConfigureSDK sets the SDK
             # path with `CACHE ... ` without FORCE).  We export the path for that command:
@@ -405,11 +405,11 @@
             export SWIFT_DRIVER_TEST_OPTIONS=" -Xcc --sysroot=${swiftSysroot} -Xclang-linker -B${pkgs.glibc}/lib -Xclang-linker --gcc-install-dir=${pkgs.stdenv.cc.cc}/lib/gcc/${pkgs.stdenv.hostPlatform.config}/${pkgs.stdenv.cc.cc.version} -Xclang-linker -Wl,--dynamic-linker,${pkgs.glibc}/lib/ld-linux-x86-64.so.2 -Xclang-linker -Wno-unused-command-line-argument -L ${pkgs.stdenv.cc.cc.lib}/lib -Xlinker -rpath-link -Xlinker ${pkgs.stdenv.cc.cc.lib}/lib"
         '';
 
-        # `nix run .#smoke-test` — validate a freshly-built toolchain with three
+        # `nix run .#smoke-test`: validate a freshly-built toolchain with three
         # tiny end-to-end programs (plain Swift, Foundation, C++ interop).  Run it
         # from the workspace root, ideally from inside the dev shell so the NixOS
-        # toolchain env (SWIFT_CORELIBS_SDK, SWIFT_GCC_TOOLCHAIN, …) is present —
-        # the Foundation and C++ tests SKIP without it; the plain test always runs.
+        # toolchain env (SWIFT_CORELIBS_SDK, SWIFT_GCC_TOOLCHAIN, …) is present.
+        # The Foundation and C++ tests SKIP without it; the plain test always runs.
         smokeTest = pkgs.writeShellScript "swift-smoke-test" ''
           set -u
           BUILD="$PWD/build/Ninja-RelWithDebInfoAssert+swift-DebugAssert"
@@ -500,7 +500,7 @@
             '';
           };
 
-          # Compiler + standard library only — the faster loop for swift/lib and
+          # Compiler + standard library only: the faster loop for swift/lib and
           # stdlib work.  Drops the Foundation augmented-sysroot construction.
           # Pair with `./dobuild.sh compiler`.
           compiler = pkgs.mkShell {
