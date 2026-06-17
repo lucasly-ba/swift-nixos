@@ -43,7 +43,8 @@ hello from C++ std::string
 
 # Foundation (built from source; consume via an installed SDK; see §3):
 $ echo 'import Foundation; print(UUID(), Date(timeIntervalSince1970: 0))' > f.swift
-$ "$SWIFTC" f.swift -o f <flags, see §3> && ./f
+$ "$SWIFTC" f.swift -o f  # plus the corelibs flags from §3
+$ ./f
 9A1CDB09-… 1970-01-01 00:00:00 +0000
 ```
 
