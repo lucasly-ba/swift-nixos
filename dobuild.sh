@@ -104,11 +104,49 @@
 # so only one runs at a time.  Bump to 2 if you have plenty of RAM + swap and want it faster.
 set -u
 cd "$(dirname "$0")/swift"
-exec utils/build-script --release-debuginfo --debug-swift --sccache \
-  --libdispatch=1 --foundation=1 \
-  "--common-swift-flags=-sil-verify-none -sdk ${SWIFT_CORELIBS_SDK} -L ${SWIFT_GCC_LIB} -Xlinker -rpath-link -Xlinker ${SWIFT_GCC_LIB} -L ${SWIFT_RUNTIME_LIB} -Xlinker -rpath-link -Xlinker ${SWIFT_RUNTIME_LIB}" \
-  "--extra-cmake-options=-DLLVM_PARALLEL_LINK_JOBS=1" \
-  "--extra-cmake-options=-DSWIFT_SDK_LINUX_ARCH_x86_64_PATH=${SWIFT_GLIBC_SYSROOT}" \
-  "--extra-cmake-options=-DSWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=${SWIFT_GCC_TOOLCHAIN};-no-verify-emitted-module-interface'" \
-  "--extra-cmake-options=-DSWIFT_SDK_LINUX_CXX_OVERLAY_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=${SWIFT_GCC_TOOLCHAIN}'" \
-  "--extra-cmake-options=-DSWIFT_INCLUDE_TESTS:BOOL=FALSE"
+
+# Sub-commands wrap the SAME build-script invocation below — see the big comment
+# block above for why each flag is there.  `compiler` drops the corelibs
+# (--libdispatch/--foundation + the --common-swift-flags block); `foundation`
+# keeps the full thing.  No other flag changes between the two.
+usage() {
+  cat <<'EOF'
+Usage: dobuild.sh <command>
+
+  compiler    LLVM + the Swift compiler + the standard library only (no
+              libdispatch/Foundation).  Faster loop for compiler/stdlib work.
+  foundation  The whole toolchain: compiler + stdlib + C++ interop +
+              libdispatch + Foundation (what most people want first).
+  all         Alias for 'foundation'.
+
+Run inside the dev shell, e.g.:
+  nix develop .#compiler --command bash dobuild.sh compiler
+  nix develop .#full     --command bash dobuild.sh foundation
+See README.md ("2. Build") and CONTRIBUTING.md for which to pick.
+EOF
+}
+
+case "${1:-}" in
+  compiler)
+    exec utils/build-script --release-debuginfo --debug-swift --sccache \
+      "--extra-cmake-options=-DLLVM_PARALLEL_LINK_JOBS=1" \
+      "--extra-cmake-options=-DSWIFT_SDK_LINUX_ARCH_x86_64_PATH=${SWIFT_GLIBC_SYSROOT}" \
+      "--extra-cmake-options=-DSWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=${SWIFT_GCC_TOOLCHAIN};-no-verify-emitted-module-interface'" \
+      "--extra-cmake-options=-DSWIFT_SDK_LINUX_CXX_OVERLAY_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=${SWIFT_GCC_TOOLCHAIN}'" \
+      "--extra-cmake-options=-DSWIFT_INCLUDE_TESTS:BOOL=FALSE"
+    ;;
+  foundation|all)   # 'all' = foundation for now; extensible later
+    exec utils/build-script --release-debuginfo --debug-swift --sccache \
+      --libdispatch=1 --foundation=1 \
+      "--common-swift-flags=-sil-verify-none -sdk ${SWIFT_CORELIBS_SDK} -L ${SWIFT_GCC_LIB} -Xlinker -rpath-link -Xlinker ${SWIFT_GCC_LIB} -L ${SWIFT_RUNTIME_LIB} -Xlinker -rpath-link -Xlinker ${SWIFT_RUNTIME_LIB}" \
+      "--extra-cmake-options=-DLLVM_PARALLEL_LINK_JOBS=1" \
+      "--extra-cmake-options=-DSWIFT_SDK_LINUX_ARCH_x86_64_PATH=${SWIFT_GLIBC_SYSROOT}" \
+      "--extra-cmake-options=-DSWIFT_STDLIB_EXTRA_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=${SWIFT_GCC_TOOLCHAIN};-no-verify-emitted-module-interface'" \
+      "--extra-cmake-options=-DSWIFT_SDK_LINUX_CXX_OVERLAY_SWIFT_COMPILE_FLAGS='-Xcc;--gcc-toolchain=${SWIFT_GCC_TOOLCHAIN}'" \
+      "--extra-cmake-options=-DSWIFT_INCLUDE_TESTS:BOOL=FALSE"
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
