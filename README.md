@@ -64,8 +64,8 @@ dir and corrupt each other.
 
 ## 1. Get the Swift source
 
-Built against `swiftlang/swift` `main` HEAD (nixpkgs pinned in `flake.lock` to gcc 15.2.0 /
-glibc 2.42). Clone this repo as the workspace, clone Swift into it, then pull the siblings:
+Built against `swiftlang/swift` `main` HEAD (verified nixpkgs pin and component versions in
+[VERSIONS.md](./VERSIONS.md)). Clone this repo as the workspace, clone Swift into it, then pull the siblings:
 
 ```sh
 git clone https://github.com/lucasly-ba/swift-nixos.git swift-workspace
@@ -74,8 +74,7 @@ git clone https://github.com/swiftlang/swift.git
 nix develop --command swift/utils/update-checkout --clone
 ```
 
-Run `update-checkout` through `nix develop` so the flake's `python3` is on PATH (NixOS has
-none, so running it directly gives `env: 'python3': No such file or directory`). Layout:
+Run `update-checkout` through `nix develop` so the flake's `python3` is on PATH. Layout:
 
 ```
 swift-workspace/        ← this repo (swift-nixos), cloned
