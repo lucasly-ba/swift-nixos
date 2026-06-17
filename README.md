@@ -37,10 +37,8 @@ $ echo 'print((1...5).map{$0*$0})' > hi.swift && "$SWIFTC" hi.swift -o hi && ./h
 # Run it with: nix run .#smoke-test
 hello from C++ std::string
 
-# Foundation (built from source; consume via an installed SDK; see §3):
-$ echo 'import Foundation; print(UUID(), Date(timeIntervalSince1970: 0))' > f.swift
-$ "$SWIFTC" f.swift -o f  # plus the corelibs flags from §3
-$ ./f
+# Foundation: needs corelibs flags; see §3 for the full invocation.
+# Quick check: nix run .#smoke-test
 9A1CDB09-… 1970-01-01 00:00:00 +0000
 ```
 
