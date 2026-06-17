@@ -116,11 +116,9 @@
           # Symlink farm: make ld's sysroot-prefixed absolute GROUP paths resolve.
           ln -s ${pkgs.glibc} $out/nix/store/$(basename ${pkgs.glibc})
         '';
-      in {
-        devShells.default = pkgs.mkShell {
-          name = "swift-dev";
-
-          packages = with pkgs; [
+        # Shared package set — every "real" dev shell (full, compiler) uses this
+        # exact list; the stub shells (sourcekit, swiftpm) don't need a toolchain.
+        commonPackages = with pkgs; [
             # Build system
             cmake
             ninja
@@ -179,7 +177,14 @@
             ccache
           ];
 
-          shellHook = ''
+        # --- shellHook, split into composable parts --------------------------
+        # baseHook       : the toolchain wiring every build needs (the 5 NixOS
+        #                  fixes from HACKING.md §1) — used by BOTH full & compiler.
+        # foundationHook : the augmented corelibs sysroot ($SWIFT_CORELIBS_SDK /
+        #                  $SWIFT_GCC_LIB / $SWIFT_RUNTIME_LIB) — needed ONLY to
+        #                  build Foundation, so it's added to the full shell only.
+        # testHook       : SWIFT_DRIVER_TEST_OPTIONS for the lit suite — both.
+        baseHook = ''
             export SWIFT_SOURCE_ROOT="$(pwd)"
             export SWIFT_BUILD_ROOT="$(pwd)/build"
 
@@ -321,7 +326,9 @@
             # SWIFT_SDK_LINUX_CXX_OVERLAY_SWIFT_COMPILE_FLAGS (verified: replaying
             # CxxStdlib with -Xcc --gcc-toolchain=$SWIFT_GCC_TOOLCHAIN builds it).
             export SWIFT_GCC_TOOLCHAIN="${pkgs.stdenv.cc.cc}"
+        '';
 
+        foundationHook = ''
             # --- Foundation / corelibs augmented sysroot -------------------------
             # Foundation's macros (compiled by the just-built 6.5-dev compiler) import
             # swift-syntax, whose HOST modules were built by the BOOTSTRAP swift 5.10.1
@@ -356,7 +363,9 @@
             # libswiftSynchronization.so etc. (the -sdk sysroot's usr/lib/swift/linux is
             # NOT in ld's default indirect-dependency search).
             export SWIFT_RUNTIME_LIB="$swiftRuntime/linux"
+        '';
 
+        testHook = ''
             # === lit test suite: NixOS toolchain flags, delivered with NO edits to
             #     the swift/ or llvm-project/ source trees ===================================
             # Running `check-swift` builds *executables* (and resilient dylibs) with the
@@ -394,9 +403,137 @@
             # first token glues onto the preceding -Xfrontend '...' option and swiftc sees
             # a mangled argument.
             export SWIFT_DRIVER_TEST_OPTIONS=" -Xcc --sysroot=${swiftSysroot} -Xclang-linker -B${pkgs.glibc}/lib -Xclang-linker --gcc-install-dir=${pkgs.stdenv.cc.cc}/lib/gcc/${pkgs.stdenv.hostPlatform.config}/${pkgs.stdenv.cc.cc.version} -Xclang-linker -Wl,--dynamic-linker,${pkgs.glibc}/lib/ld-linux-x86-64.so.2 -Xclang-linker -Wno-unused-command-line-argument -L ${pkgs.stdenv.cc.cc.lib}/lib -Xlinker -rpath-link -Xlinker ${pkgs.stdenv.cc.cc.lib}/lib"
+        '';
 
-            echo "Swift 6.5 dev shell — source root: $SWIFT_SOURCE_ROOT"
-          '';
+        # `nix run .#smoke-test` — validate a freshly-built toolchain with three
+        # tiny end-to-end programs (plain Swift, Foundation, C++ interop).  Run it
+        # from the workspace root, ideally from inside the dev shell so the NixOS
+        # toolchain env (SWIFT_CORELIBS_SDK, SWIFT_GCC_TOOLCHAIN, …) is present —
+        # the Foundation and C++ tests SKIP without it; the plain test always runs.
+        smokeTest = pkgs.writeShellScript "swift-smoke-test" ''
+          set -u
+          BUILD="$PWD/build/Ninja-RelWithDebInfoAssert+swift-DebugAssert"
+          B="$BUILD/swift-linux-x86_64"
+          SWIFTC="$B/bin/swiftc"
+
+          if [ ! -x "$SWIFTC" ]; then
+            echo "smoke-test: no built compiler at"
+            echo "  $SWIFTC"
+            echo "Build one first, from the workspace root:"
+            echo "  nix develop .#full --command bash dobuild.sh foundation"
+            exit 1
+          fi
+
+          if [ -z "''${SWIFT_GLIBC_SYSROOT:-}" ]; then
+            echo "note: not in the dev shell — link/run may fail.  Prefer:"
+            echo "  nix develop .#full --command nix run .#smoke-test"
+            echo
+          fi
+
+          export LD_LIBRARY_PATH="$B/lib/swift/linux''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          fail=0
+
+          # --- Test 1: plain Swift ---------------------------------------------
+          echo 'print((1...5).map{$0*$0})' > "$tmp/t1.swift"
+          if out="$("$SWIFTC" "$tmp/t1.swift" -o "$tmp/t1" 2>"$tmp/t1.err" && "$tmp/t1")" \
+               && [ "$out" = "[1, 4, 9, 16, 25]" ]; then
+            echo "PASS  plain Swift     -> $out"
+          else
+            echo "FAIL  plain Swift     -> '$out'"; sed 's/^/      /' "$tmp/t1.err"; fail=1
+          fi
+
+          # --- Test 2: Foundation (exact corelibs flags from README §3) --------
+          if [ -n "''${SWIFT_CORELIBS_SDK:-}" ] && [ -n "''${SWIFT_GCC_LIB:-}" ]; then
+            SDK="$tmp/foundation-sdk"
+            DESTDIR="$SDK" ${pkgs.ninja}/bin/ninja -C "$BUILD/libdispatch-linux-x86_64" install >/dev/null 2>&1
+            DESTDIR="$SDK" ${pkgs.ninja}/bin/ninja -C "$BUILD/foundation-linux-x86_64"  install >/dev/null 2>&1
+            SDKLIB="$SDK/usr/lib/swift"
+            echo 'import Foundation; print(UUID().uuidString.count)' > "$tmp/t2.swift"
+            if out="$("$SWIFTC" "$tmp/t2.swift" -o "$tmp/t2" \
+                  -sdk "$SWIFT_CORELIBS_SDK" -L "$SWIFT_GCC_LIB" -Xlinker -rpath-link -Xlinker "$SWIFT_GCC_LIB" \
+                  -L "$B/lib/swift/linux" -Xlinker -rpath-link -Xlinker "$B/lib/swift/linux" \
+                  -I "$SDKLIB/linux" -I "$SDKLIB" -L "$SDKLIB/linux" \
+                  -Xlinker -rpath -Xlinker "$B/lib/swift/linux" -Xlinker -rpath -Xlinker "$SDKLIB/linux" \
+                  2>"$tmp/t2.err" && "$tmp/t2")" \
+                 && [ "$out" = "36" ]; then
+              echo "PASS  Foundation      -> UUID length $out"
+            else
+              echo "FAIL  Foundation      -> '$out'"; sed 's/^/      /' "$tmp/t2.err"; fail=1
+            fi
+          else
+            echo "SKIP  Foundation      (SWIFT_CORELIBS_SDK unset; run inside nix develop .#full)"
+          fi
+
+          # --- Test 3: C++ interop (exact -Xcc flags from README §3) -----------
+          if [ -n "''${SWIFT_GCC_TOOLCHAIN:-}" ] && [ -n "''${SWIFT_GLIBC_SYSROOT:-}" ]; then
+            mkdir -p "$tmp/cxxmod"
+            printf '#pragma once\ninline int cxx_answer() { return 42; }\n' > "$tmp/cxxmod/shim.h"
+            printf 'module CxxHello { header "shim.h" requires cplusplus }\n' > "$tmp/cxxmod/module.modulemap"
+            printf 'import CxxHello\nprint(cxx_answer())\n' > "$tmp/t3.swift"
+            if out="$("$SWIFTC" -cxx-interoperability-mode=default \
+                  -Xcc --gcc-toolchain="$SWIFT_GCC_TOOLCHAIN" -Xcc --sysroot="$SWIFT_GLIBC_SYSROOT" \
+                  -I "$tmp/cxxmod" "$tmp/t3.swift" -o "$tmp/t3" 2>"$tmp/t3.err" && "$tmp/t3")" \
+                 && [ "$out" = "42" ]; then
+              echo "PASS  C++ interop     -> cxx_answer() = $out"
+            else
+              echo "FAIL  C++ interop     -> '$out'"; sed 's/^/      /' "$tmp/t3.err"; fail=1
+            fi
+          else
+            echo "SKIP  C++ interop     (SWIFT_GCC_TOOLCHAIN unset; run inside nix develop .#full)"
+          fi
+
+          echo
+          if [ "$fail" = 0 ]; then echo "smoke-test: all run tests passed"; exit 0; fi
+          echo "smoke-test: FAILURES above"; exit 1
+        '';
+      in {
+        devShells = rec {
+          # The complete toolchain shell: compiler + stdlib + C++ interop +
+          # libdispatch + Foundation.  Pair with `./dobuild.sh foundation`.
+          full = pkgs.mkShell {
+            name = "swift-dev-full";
+            packages = commonPackages;
+            shellHook = baseHook + foundationHook + testHook + ''
+              echo "Swift 6.5 dev shell (full: compiler + stdlib + C++ interop + Foundation) — source root: $SWIFT_SOURCE_ROOT"
+            '';
+          };
+
+          # Compiler + standard library only — the faster loop for swift/lib and
+          # stdlib work.  Drops the Foundation augmented-sysroot construction.
+          # Pair with `./dobuild.sh compiler`.
+          compiler = pkgs.mkShell {
+            name = "swift-dev-compiler";
+            packages = commonPackages;
+            shellHook = baseHook + testHook + ''
+              echo "Swift 6.5 dev shell (compiler + stdlib only) — source root: $SWIFT_SOURCE_ROOT"
+            '';
+          };
+
+          # Backwards compatibility: `nix develop` keeps meaning the full shell.
+          default = full;
+
+          # Stubs for components not yet built/tested on NixOS.
+          sourcekit = pkgs.mkShell {
+            name = "swift-dev-sourcekit";
+            shellHook = ''
+              echo "SourceKit-LSP: not yet built/tested on NixOS. See HACKING.md section 5."
+            '';
+          };
+
+          swiftpm = pkgs.mkShell {
+            name = "swift-dev-swiftpm";
+            shellHook = ''
+              echo "SwiftPM: not yet built/tested on NixOS. See HACKING.md section 5."
+            '';
+          };
+        };
+
+        apps.smoke-test = {
+          type = "app";
+          program = "${smokeTest}";
+          meta.description = "Smoke-test a swift-nixos build (plain Swift, Foundation, C++ interop)";
         };
       });
 }
