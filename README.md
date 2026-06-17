@@ -4,12 +4,8 @@
 from NixOS.** The official `build-script` doesn't build on NixOS; this makes the full
 from-source contributor loop (build, test, send a PR) work.
 
-A Nix dev shell (`flake.nix`) + build script (`dobuild.sh`) that build the **Swift toolchain
-from source on NixOS**. That's the compiler, the standard library, the C++ interop overlay
-(`CxxStdlib`), libdispatch, and Foundation. The stock `swift/utils/build-script`
-builds none of these on NixOS out of the box, because NixOS has no `/usr/include`, `/usr/lib/gcc`, bare
-`libcurses.so`, etc. All the NixOS-specific workarounds live in `flake.nix` + `dobuild.sh`; no
-Swift / LLVM / Foundation source is patched.
+Two files: `flake.nix` (the dev shell) and `dobuild.sh` (the build script). No Swift /
+LLVM / Foundation source is patched.
 
 **Status: it works**, including the **C++ interoperability overlay (`CxxStdlib`)** and
 **Foundation**. The built `swiftc` compiles, links, and runs real Swift programs, can
@@ -25,6 +21,8 @@ Swift / LLVM / Foundation source is patched.
 `nix run .#smoke-test` uses). The README only ever invokes `swiftc` and the platform runtime dir,
 so it points the variable straight at the swift tree. `CONTRIBUTING.md` anchors `$B` one level up
 at the build dir instead, because its test commands also reach the sibling LLVM tree.
+
+> The snippets below run inside the dev shell. Either run `nix develop .#full` first, or add a `.envrc` containing `use flake .#full` so direnv activates it automatically when you `cd` into the workspace.
 
 ```
 $ B=build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64
