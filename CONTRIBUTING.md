@@ -11,7 +11,7 @@ this guide is about *building and testing locally*; it never ends up in your PR.
 cannot tell you built on NixOS.
 
 > **Conventions in this doc**
-> - `$ROOT` = this workspace, `~/afs/swift`.
+> - `$ROOT` = this workspace (the `swift-workspace` directory you cloned in README §1).
 > - `$B`   = the build directory, `build/Ninja-RelWithDebInfoAssert+swift-DebugAssert`.
 > - Every command runs inside the Nix dev shell. Either prefix with `nix develop --command`,
 >   or run `nix develop` once and stay in the subshell (or let `direnv` enter it automatically).
@@ -23,7 +23,7 @@ cannot tell you built on NixOS.
 ## 0. The whole loop in 4 lines
 
 ```bash
-cd ~/afs/swift
+cd swift-workspace
 nvim swift/lib/Sema/...                 # 1. edit compiler/stdlib source
 nix develop -c ninja -C build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64 bin/swift-frontend   # 2. incremental rebuild
 nix develop -c build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/llvm-linux-x86_64/bin/llvm-lit -s build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-linux-x86_64/test-linux-x86_64/<YourTest>.swift  # 3. run the test
@@ -40,7 +40,7 @@ The rest of this document explains each step.
 Everything happens inside the Nix dev shell defined by `flake.nix`:
 
 ```bash
-cd ~/afs/swift
+cd swift-workspace
 nix develop            # drops you in a shell with the whole NixOS toolchain wired up
 ```
 
@@ -70,7 +70,7 @@ You now have two remotes in `swift/`: `origin` (the real Swift repo, read-only f
 ## 2. Building the full toolchain (first time, ~40 min)
 
 ```bash
-cd ~/afs/swift
+cd swift-workspace
 nix develop --command bash dobuild.sh foundation 2>&1 | tee /tmp/swift-build.log
 ```
 
