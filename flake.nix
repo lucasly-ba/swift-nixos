@@ -397,7 +397,9 @@
             # This mirrors the CCC_OVERRIDE_OPTIONS toolchain completion the main build
             # uses, but scoped to the test harness via a public env var instead of patching
             # lit.  Verified: Parse 252/252 + the executable Parse tests pass; Interpreter
-            # 259/260 (the lone failure is an unrelated LTO/lld issue).
+            # 257/260 (the 3 failures are an unrelated LTO/lld issue and 2 cdecl C-interop
+            # tests: llvm_link_time_opt.swift, cdecl_official_run.swift,
+            # cdecl_implementation_run.swift).
             # NOTE the leading space: swift's lit.cfg does `swift_driver_test_options +=
             # os.environ['SWIFT_DRIVER_TEST_OPTIONS']` with no separator, so without it the
             # first token glues onto the preceding -Xfrontend '...' option and swiftc sees
