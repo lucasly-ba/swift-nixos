@@ -427,7 +427,7 @@
           fi
 
           if [ -z "''${SWIFT_GLIBC_SYSROOT:-}" ]; then
-            echo "note: not in the dev shell — link/run may fail.  Prefer:"
+            echo "note: not in the dev shell, link/run may fail.  Prefer:"
             echo "  nix develop .#full --command nix run .#smoke-test"
             echo
           fi
@@ -498,7 +498,7 @@
             name = "swift-dev-full";
             packages = commonPackages;
             shellHook = baseHook + foundationHook + testHook + ''
-              echo "Swift 6.5 dev shell (full: compiler + stdlib + C++ interop + Foundation) — source root: $SWIFT_SOURCE_ROOT"
+              echo "Swift 6.5 dev shell (full: compiler + stdlib + C++ interop + Foundation). source root: $SWIFT_SOURCE_ROOT"
             '';
           };
 
@@ -509,7 +509,7 @@
             name = "swift-dev-compiler";
             packages = commonPackages;
             shellHook = baseHook + testHook + ''
-              echo "Swift 6.5 dev shell (compiler + stdlib only) — source root: $SWIFT_SOURCE_ROOT"
+              echo "Swift 6.5 dev shell (compiler + stdlib only). source root: $SWIFT_SOURCE_ROOT"
             '';
           };
 
